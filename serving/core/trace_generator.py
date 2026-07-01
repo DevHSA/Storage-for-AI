@@ -1530,10 +1530,27 @@ def generate_trace(batch, hardware, tp_size, pp_size, local_ep, ep_total, pd_typ
         if power_model is not None:
             power_model.add_dram_energy_consumption(node_id, evict_size)
 
+    # Deeper-tier prefix reloads (FLASH/ICMS/COLDSTORE): the Python wrapper has
+    # already computed each tier's access latency (ns). Inject it as a plain
+    # compute node (all LOCAL, no data movement) so the Chakra converter and
+    # ASTRA-Sim see an ordinary COMP node — no new memory-location type, no
+    # change to the converter/binary/inputs. These MUST be middle nodes (never
+    # the first/last layer): the converter builds a MEM_LOAD from the first
+    # layer's input_loc and a MEM_STORE from the last layer's output_loc, which
+    # require REMOTE (or configured local_mem) or ASTRA-Sim crashes. So we
+    # splice them in right after the first real layer, before the last.
+    tier_nodes = []
+    for label, comp_ns in (getattr(batch, 'tier_loads', None) or []):
+        if comp_ns and comp_ns > 0:
+            tier_nodes.append([label, str(int(round(comp_ns))), 'LOCAL', '0', 'LOCAL', '0', 'LOCAL', '0', 'NONE', '0', 'NONE'])
+
     if power_model is not None:
         power_model.print_log(node_id)
 
-    result = mem + dic
+    if tier_nodes and len(dic) >= 2:
+        result = mem + [dic[0]] + tier_nodes + dic[1:]
+    else:
+        result = mem + dic
 
     with open(output_path, 'w') as f:
         # instance type

@@ -419,13 +419,15 @@ def print_input_config(args: Any) -> None:
         return x if x not in (None, "") else "N/A"
 
     def _pc(x: Any) -> str:
-        if x == "None":
-            return "xPU-Only"
-        if x == "CPU":
-            return "xPU + CPU"
-        if x == "CXL":
-            return "xPU + CXL"
-        return "None"
+        chain = {
+            "None": "xPU-Only",
+            "CPU": "xPU + CPU",
+            "CXL": "xPU + CXL",
+            "FLASH": "xPU + CPU + FLASH",
+            "ICMS": "xPU + CPU + FLASH + ICMS",
+            "COLDSTORE": "xPU + CPU + FLASH + ICMS + COLDSTORE",
+        }
+        return chain.get(x, "None")
 
     items: list[tuple[str, Any]] = []
 

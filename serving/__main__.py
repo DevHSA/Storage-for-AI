@@ -230,8 +230,13 @@ def main():
                         'matching vLLM v1 behavior (default: enabled). Use --no-enable-chunked-prefill to disable')
     parser.add_argument('--enable-prefix-sharing', action='store_true', default=False,
                         help='enable second-tier prefix cache pooling across instances within a node')
-    parser.add_argument('--prefix-storage', type=str, choices=['None', 'CPU', 'CXL'], default='None',
-                        help='storage medium for the second-tier prefix cache pool: None (NPU only), CPU, or CXL')
+    parser.add_argument('--prefix-storage', type=str,
+                        choices=['None', 'CPU', 'CXL', 'FLASH', 'ICMS', 'COLDSTORE'], default='None',
+                        help='deepest prefix-cache spill tier. None = NPU only; CXL = legacy standalone '
+                        'second tier. CPU/FLASH/ICMS/COLDSTORE select the depth of the '
+                        'NPU->CPU->FLASH->ICMS->COLDSTORE chain: the named tier and every shallower tier '
+                        'are used, deeper tiers are unused (spill past the limit is dropped). '
+                        'Requires --enable-prefix-sharing for FLASH/ICMS/COLDSTORE.')
     parser.add_argument('--enable-local-offloading', action='store_true', default=False,
                         help='enable weight offloading to local (NPU) memory. '
                         'Recommended to disable unless weight memory access is not counted in profiling')
@@ -349,14 +354,37 @@ def main():
     for i in range(num_instances):
         prefix_pool_inst_mapping[i] = None
 
-    pool_device = None
+    # --prefix-storage is a DEPTH LIMIT on the NPU->CPU->FLASH->ICMS->COLDSTORE
+    # chain. The immediate second tier (handled by the existing ASTRA-Sim path)
+    # is always CPU when the chain is used; CXL stays a standalone legacy tier.
+    _TIER_CHAIN = ['CPU', 'FLASH', 'ICMS', 'COLDSTORE']
+    _NAME_TO_DEVICE = {'FLASH': Device.FLASH, 'ICMS': Device.ICMS, 'COLDSTORE': Device.COLDSTORE}
+    if prefix_storage in ('FLASH', 'ICMS', 'COLDSTORE'):
+        storage_medium = 'CPU'
+        deep_tier_names = _TIER_CHAIN[1:_TIER_CHAIN.index(prefix_storage) + 1]
+    elif prefix_storage in ('CPU', 'CXL'):
+        storage_medium = prefix_storage
+        deep_tier_names = []
+    else:
+        storage_medium = 'None'
+        deep_tier_names = []
 
-    if prefix_storage == "CPU":
+    if deep_tier_names and not (any_prefix_caching and enable_prefix_sharing):
+        raise RuntimeError(
+            f"--prefix-storage {prefix_storage} (multi-tier spillover) requires "
+            f"--enable-prefix-caching and --enable-prefix-sharing")
+
+    pool_device = None
+    if storage_medium == "CPU":
         pool_device = Device.CPU
-    elif prefix_storage == "CXL":
+    elif storage_medium == "CXL":
         pool_device = Device.CXL
 
-    if any_prefix_caching and enable_prefix_sharing and prefix_storage != 'None':
+    # Deep-tier shared pools (per node) + per-instance specs handed to schedulers.
+    deep_tier_pools = {}                                   # tier_name -> [pool per node]
+    deep_tier_specs_by_inst = {i: [] for i in range(num_instances)}
+
+    if any_prefix_caching and enable_prefix_sharing and storage_medium != 'None':
         num_prefix_pool = num_nodes
         # make prefix pool objects based on num_prefix_pool
         prefix_pools = []
@@ -380,27 +408,65 @@ def main():
             cfg = instance_runtime_configs[inst_ids[0]]
             return full_cluster_kv_bytes_per_token(model, cfg["fp"], cfg["kv_cache_dtype"])
 
-        if prefix_storage == 'CPU':
+        if storage_medium == 'CPU':
             for i in range(num_prefix_pool):
                 if cpu_mem_size[i] > 0:
                     new_prefix_pool = RadixCache(
                                                 node_id=0,
-                                                device=prefix_storage,
+                                                device=storage_medium,
                                                 page_size=256,
                                                 capacity = cpu_mem_size[i] * GB_TO_BYTE,
                                                 kv_size=_pool_kv_bytes_per_token(node2inst_mapping[i]),
                                                 enable_kv_cache_events=True)
                     prefix_pools.append(new_prefix_pool)
                 else:
-                    raise RuntimeError(f"Memory size for prefix storage type {prefix_storage} is invalid")
+                    raise RuntimeError(f"Memory size for prefix storage type {storage_medium} is invalid")
             # This means one node shares one prefix pool
             prefix_pool_inst_mapping = inst2node_mapping
 
-        elif prefix_storage == 'CXL':
+            # Build the deeper spill-tier pools (per node), truncated at the
+            # CLI depth limit. Each is a shared per-node RadixCache like CPU.
+            tier_cfgs = cluster.get("tier_configs", {})
+            for tname in deep_tier_names:
+                tcfg = tier_cfgs.get(tname)
+                if tcfg is None or len(tcfg["size"]) < num_prefix_pool:
+                    raise RuntimeError(
+                        f"--prefix-storage {prefix_storage} requires '{tname.lower()}_mem' "
+                        f"to be configured in the cluster config")
+                pools = []
+                for i in range(num_prefix_pool):
+                    if tcfg["size"][i] <= 0:
+                        raise RuntimeError(
+                            f"--prefix-storage {prefix_storage} requires '{tname.lower()}_mem' "
+                            f"(mem_size > 0) on node {i}")
+                    pools.append(RadixCache(
+                        node_id=i,
+                        device=tname,
+                        page_size=256,
+                        capacity=int(tcfg["size"][i] * GB_TO_BYTE),
+                        kv_size=_pool_kv_bytes_per_token(node2inst_mapping[i]),
+                        enable_kv_cache_events=False))
+                deep_tier_pools[tname] = pools
+
+            for inst_id in range(num_instances):
+                node = inst2node_mapping[inst_id]
+                specs = []
+                for tname in deep_tier_names:
+                    tcfg = tier_cfgs[tname]
+                    specs.append({
+                        'device': _NAME_TO_DEVICE[tname], 'name': tname,
+                        'cache': deep_tier_pools[tname][node],
+                        'capacity_gb': tcfg["size"][node],
+                        'mem_bw': tcfg["mem_bw"][node], 'mem_latency': tcfg["mem_latency"][node],
+                        'link_bw': tcfg["link_bw"][node], 'link_latency': tcfg["link_latency"][node],
+                    })
+                deep_tier_specs_by_inst[inst_id] = specs
+
+        elif storage_medium == 'CXL':
             if cluster["cxl_mem_size"] > 0:
                 new_prefix_pool = RadixCache(
                                             node_id=None,
-                                            device=prefix_storage,
+                                            device=storage_medium,
                                             page_size=1,
                                             capacity = cluster["cxl_mem_size"] * GB_TO_BYTE,
                                             kv_size=_pool_kv_bytes_per_token(list(range(num_instances))),
@@ -440,6 +506,7 @@ def main():
             cxl_mem,
             ep_size=instance.get("ep_total", 1),
             kv_cache_dtype=inst_cfg["kv_cache_dtype"],
+            deep_tiers=deep_tier_specs_by_inst.get(instance_id, []),
         ))
 
     # Controller for astra-sim process communication
@@ -798,7 +865,7 @@ def main():
                 for i, (node_id, inst_ids) in enumerate(node2inst_mapping.items()):
                     node_cpu_usage = 0
                     inst_usage = []
-                    if any_prefix_caching and enable_prefix_sharing and prefix_storage == "CPU":
+                    if any_prefix_caching and enable_prefix_sharing and storage_medium == "CPU":
                         node_cpu_usage = prefix_pools[node_id].total_size() * prefix_pools[node_id].kv_size
                     else:
                         for inst_id in inst_ids:
@@ -807,17 +874,18 @@ def main():
                             inst_usage.append(inst_cpu_usage)
 
                     cpu_util = (node_cpu_usage / (cpu_mem_size[node_id]*GB_TO_BYTE)) * 100
-                    if prefix_storage != "CXL" and not power_modeling and i == num_nodes - 1:
+                    has_deep = bool(deep_tier_names)
+                    if storage_medium != "CXL" and not has_deep and not power_modeling and i == num_nodes - 1:
                         tree_indent = '└─'
                     line = (
                         f"{log_indent+tree_indent}Node\\[{node_id}]: "
                         f"Total CPU Memory Usage {node_cpu_usage/MB_TO_BYTE:.2f} MB, "
                         f"{cpu_util:.3f} % Used "
                     )
-                    if any_prefix_caching and enable_prefix_sharing and prefix_storage == "CPU":
+                    if any_prefix_caching and enable_prefix_sharing and storage_medium == "CPU":
                         line += prefix_pools[node_id].format_prefix_info()
 
-                    if (any_prefix_caching and enable_prefix_sharing and prefix_storage == "CPU") or (len(inst_ids) == 1):
+                    if (any_prefix_caching and enable_prefix_sharing and storage_medium == "CPU") or (len(inst_ids) == 1):
                         print_markup(line)
                     else:
                         parts = []
@@ -826,8 +894,24 @@ def main():
                             parts.append(f"Instance\\[{inst_ids[j]}]: {inst_cpu_util:.2f} %")
                         print_markup(line + "(" + ", ".join(parts) + ")")
 
+                    # Deep spill tiers (FLASH/ICMS/COLDSTORE) usage for this node.
+                    for ti, tname in enumerate(deep_tier_names):
+                        pools = deep_tier_pools.get(tname, [])
+                        if node_id >= len(pools):
+                            continue
+                        dp = pools[node_id]
+                        dused = dp.total_size() * dp.kv_size
+                        dutil = (dused / dp.capacity * 100) if dp.capacity else 0
+                        if (not power_modeling and i == num_nodes - 1
+                                and ti == len(deep_tier_names) - 1):
+                            tree_indent = '└─'
+                        print_markup(
+                            f"{log_indent+tree_indent}Node\\[{node_id}] {tname}: "
+                            f"Usage {dused/MB_TO_BYTE:.2f} MB, {dutil:.3f} % Used"
+                        )
+
             ######### Per CXL Metrics #########
-            if any_prefix_caching and prefix_storage == "CXL":
+            if any_prefix_caching and storage_medium == "CXL":
                 if enable_prefix_sharing:
                     num_prefix_pool = len(prefix_pools)
                     for cxl_id, cxl_pool in enumerate(prefix_pools):
@@ -929,27 +1013,49 @@ def main():
     # check all scheduled requests in astra-sim are well done
     controller.check_end(p)
 
-    # calcuate prefix caching metrics
-    total_requested_tokens = 0
-    total_npu_hit_tokens = 0
-    total_cpu_hit_tokens = 0
+    # calculate prefix caching metrics (per tier: NPU -> CPU/CXL -> deep tiers)
+    tier_requested_tokens = 0
+    tier_hit_tokens = {}          # Device -> hit tokens (summed across instances)
     if any_prefix_caching:
         for i in range(num_instances):
             if not schedulers[i].enable_prefix_caching:
                 continue
-            (temp_npu_a, temp_npu_b), (temp_cpu_a, temp_cpu_b) = schedulers[i].memory.return_prefix_info()
-            if (not enable_prefix_sharing) and (prefix_storage != "None") and (temp_npu_a != temp_cpu_a):
-                raise RuntimeError(f"Instance[{i}] prefix caching requested tokens mismatch between NPU ({temp_npu_a}) and CPU ({temp_cpu_a})")
-            total_requested_tokens += temp_npu_a
-            total_npu_hit_tokens += temp_npu_b
-            if not enable_prefix_sharing:
-                total_cpu_hit_tokens += temp_cpu_b
-        
-        if enable_prefix_sharing:
-            for pool in prefix_pools:
-                _, temp_cpu_b = pool.return_prefix_info()
-                total_cpu_hit_tokens += temp_cpu_b
-    
+            req_i, hits_i = schedulers[i].memory.tier_hit_report()
+            tier_requested_tokens += req_i
+            for dev, h in hits_i.items():
+                tier_hit_tokens[dev] = tier_hit_tokens.get(dev, 0) + h
+
+    def _tier_usage_bytes():
+        """Per-Device (used_bytes, capacity_bytes), pool-aware (dedup shared pools)."""
+        usage = {}
+        # NPU: per-instance, summed.
+        nu = nc = 0
+        for i in range(num_instances):
+            if not schedulers[i].enable_prefix_caching:
+                continue
+            npc = schedulers[i].memory.npu_prefix_cache
+            nu += npc.total_memory_usage(); nc += npc.capacity
+        usage[Device.NPU] = (nu, nc)
+        # CPU / CXL second tier.
+        if pool_device is not None:
+            if enable_prefix_sharing:
+                u = sum(p.total_memory_usage() for p in prefix_pools)
+                c = sum(p.capacity for p in prefix_pools)
+            else:
+                u = c = 0
+                for i in range(num_instances):
+                    st = getattr(schedulers[i].memory, "second_tier_prefix_cache", None)
+                    if st is not None:
+                        u += st.total_memory_usage(); c += st.capacity
+            usage[pool_device] = (u, c)
+        # Deep tiers (shared per-node pools).
+        for tname in deep_tier_names:
+            pools = deep_tier_pools.get(tname, [])
+            usage[_NAME_TO_DEVICE[tname]] = (
+                sum(p.total_memory_usage() for p in pools),
+                sum(p.capacity for p in pools))
+        return usage
+
     # This is total system's throughput
     total_latency = current/FREQ
     print_rule()
@@ -968,17 +1074,30 @@ def main():
     print_markup(f"Throughput per {1/RATIO} sec (\\[prompt_throughput], \\[gen_throughput]): {throughput}")
     print_rule()
     if any_prefix_caching:
-        print_rule("[sim.tagline]Prefix Caching Results[/]")
-        print_markup(f"Total requested prompt tokens:                                      {total_requested_tokens}")
-        print_markup(f"NPU prefix hit prompt tokens:                                       {total_npu_hit_tokens}")
-        if total_requested_tokens > 0:
-            print_markup(f"NPU prefix hit ratio (%):                                           {(total_npu_hit_tokens/total_requested_tokens)*100:.2f}")
-            if prefix_storage != "None":
-                print_markup(f"{prefix_storage} prefix hit prompt tokens:                                       {total_cpu_hit_tokens}")
-                print_markup(f"{prefix_storage} prefix hit ratio (%):                                           {(total_cpu_hit_tokens/total_requested_tokens)*100:.2f}")
-            print_markup(f"Total prefix hit ratio (%):                                         {((total_npu_hit_tokens+total_cpu_hit_tokens)/total_requested_tokens)*100:.2f}")
+        print_rule("[sim.tagline]Prefix Caching Results (per tier)[/]")
+        print_markup(f"Total requested prompt tokens:                                      {tier_requested_tokens}")
+        # Ordered tier chain: NPU -> CPU/CXL -> deep tiers (depth-limited).
+        ordered = [Device.NPU]
+        if pool_device is not None:
+            ordered.append(pool_device)
+        for tname in deep_tier_names:
+            ordered.append(_NAME_TO_DEVICE[tname])
+        usage = _tier_usage_bytes()
+        if tier_requested_tokens > 0:
+            total_hit = 0
+            print_markup(f"{'Tier':<10}{'Hit tokens':>12}{'Hit ratio':>12}{'End usage':>16}{'Capacity':>14}{'% used':>10}")
+            for dev in ordered:
+                h = tier_hit_tokens.get(dev, 0)
+                total_hit += h
+                ratio = (h / tier_requested_tokens) * 100
+                used, cap = usage.get(dev, (0, 0))
+                pct = (used / cap * 100) if cap else 0.0
+                print_markup(
+                    f"{dev.name:<10}{h:>12}{ratio:>11.2f}%"
+                    f"{used/MB_TO_BYTE:>13.2f} MB{cap/GB_TO_BYTE:>11.2f} GB{pct:>9.3f}%")
+            print_markup(f"Total prefix hit ratio (%):                                         {(total_hit/tier_requested_tokens)*100:.2f}")
         else:
-            print_markup("NPU prefix hit ratio (%):                                           N/A (no requests tracked)")
+            print_markup("Prefix hit ratio (%):                                               N/A (no requests tracked)")
         print_rule()
     if power_modeling:
         print_rule("[sim.tagline]Power Modeling Results[/]")

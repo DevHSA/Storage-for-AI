@@ -1,10 +1,44 @@
 # #!/bin/bash
 
 # Single instance example (prefix caching in xPU memory is default now)
-python -m serving --cluster-config 'configs/cluster/single_node_single_instance.json' \
-    --dtype float16 --block-size 16 \
-    --dataset 'workloads/example_trace.jsonl' --output 'outputs/example_single_run.csv' \
-    --num-req 10
+# python -m serving --cluster-config 'configs/cluster/single_node_single_instance.json' \
+#     --dtype float16 --block-size 16 \
+#     --dataset 'workloads/example_trace.jsonl' --output 'outputs/example_single_run.csv' \
+#     --num-req 10
+
+# Prefix cache with CPU Prefix Cache Pool example (multi-instance, single node)
+# python -m serving \
+#   --cluster-config 'configs/cluster/single_node_multi_instance.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage CPU \
+#   --dataset 'workloads/example_trace.jsonl' \
+#   --output 'outputs/prefix_cpu_pool_run.csv'
+
+# Multi-tier prefix-cache spillover example (NPU -> CPU -> FLASH -> ICMS -> COLDSTORE)
+# python -m serving \
+#   --cluster-config 'configs/cluster/single_node_tiered_instance.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+#   --dataset 'workloads/example_trace.jsonl' \
+#   --output 'outputs/tiered_spillover_run.csv'
+
+# Multi-tier spillover with a SHARED-PREFIX workload (exercises hits + write-through)
+# python -m serving \
+#   --cluster-config 'configs/cluster/single_node_tiered_instance.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+#   --dataset 'workloads/shared_prefix_trace.jsonl' \
+#   --output 'outputs/tiered_shared_prefix_run.csv'
+
+# Multi-tier spillover DEMO: small caps + phased access evict prefix "A" down the
+# chain, then reuse it -> served from COLDSTORE with Python-injected reload latency
+# (a `coldstore_load` COMP node ~142 ms). Takes ~2-3 min (small NPU, long prefills).
+python -m serving \
+  --cluster-config 'configs/cluster/single_node_tiered_small.json' \
+  --dtype float16 --block-size 16 \
+  --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+  --dataset 'workloads/tier_demo_trace.jsonl' \
+  --output 'outputs/tiered_demo_run.csv'
 
 # Multi instance example
 # python -m serving --cluster-config 'configs/cluster/single_node_multi_instance.json' \

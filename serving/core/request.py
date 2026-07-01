@@ -37,6 +37,11 @@ class Request:
         self._prefix_npu_stats_counted = False
         self._prefix_storage_stats_counted = False
 
+        # For multi-tier spillover (FLASH/ICMS/COLDSTORE)
+        self.tier_reload = {}                 # deep-tier Device -> tokens to reload on a hit
+        self._prefix_tier_stats_counted = False
+        self._deep_reload_counted = False
+
         # For agentic session tracking (informational, does not drive scheduling)
         self.session_id = None
         self.sub_request_index = None
@@ -74,7 +79,7 @@ class Request:
 
 # class that manages batch of astra-sim
 class Batch:
-    def __init__(self, batch_id, model, total_len, kv_len, q_list, k_list, num_prefill, num_decode, prefill_q_list, prefill_k_list, decode_k_list, batch_time, kv_size, evict=0, load=0):
+    def __init__(self, batch_id, model, total_len, kv_len, q_list, k_list, num_prefill, num_decode, prefill_q_list, prefill_k_list, decode_k_list, batch_time, kv_size, evict=0, load=0, tier_loads=None):
         self.batch_id = batch_id
         self.model = model
         self.total_len = total_len
@@ -87,6 +92,9 @@ class Batch:
         self.kv_size = kv_size
         self.evict = evict
         self.load = load
+        # Deep-tier (FLASH/ICMS/COLDSTORE) reloads: list of (label, comp_time_ns)
+        # emitted as plain compute nodes in the trace (Python-timed latency).
+        self.tier_loads = tier_loads if tier_loads is not None else []
         # for attn prediction
         self.q_list = q_list
         self.k_list = k_list

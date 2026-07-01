@@ -20,7 +20,7 @@ class Scheduler:
                  num_npus, tp_size, pp_size, npu_mem, cpu_mem,
                  start_npu, pd_type, fp, block_size, req_num,
                  prioritize_prefill, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, enable_chunked_prefill=False,
-                 long_prefill_token_threshold=0, cxl_mem=0, ep_size=1, kv_cache_dtype='auto'):
+                 long_prefill_token_threshold=0, cxl_mem=0, ep_size=1, kv_cache_dtype='auto', deep_tiers=None):
         self.model = model
         self.config = get_config(model)
         self.node_id = node_id
@@ -46,7 +46,7 @@ class Scheduler:
         self.batch_ids = -1
 
         # memory model
-        self.memory = MemoryModel(model, instance_id, node_id, num_npus, tp_size, npu_mem, cpu_mem, block_size, fp, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, cxl_mem, ep_size=ep_size, pp_size=pp_size, kv_cache_dtype=kv_cache_dtype)
+        self.memory = MemoryModel(model, instance_id, node_id, num_npus, tp_size, npu_mem, cpu_mem, block_size, fp, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, cxl_mem, ep_size=ep_size, pp_size=pp_size, kv_cache_dtype=kv_cache_dtype, deep_tiers=deep_tiers)
 
         # logger
         self.logger = get_logger(self.__class__, node_id=node_id, instance_id=instance_id)
@@ -533,7 +533,8 @@ class Scheduler:
             # ============ STEP 4: Allocate memory & handle evicted requests ============
             evict_load_size = 0
             prefix_load_size = 0
-            
+            tier_load_bytes = {}   # deep-tier Device -> reload bytes (this batch)
+
             for req in batch_req:
                 # Remove from request queue
                 for i, req_ in enumerate(self.request):
@@ -545,6 +546,13 @@ class Scheduler:
                 if req.is_prefill() and req.storage_cache_hit > req.npu_cache_hit:
                     prefix_load_size += (req.storage_cache_hit - req.npu_cache_hit) * self.memory.get_kv(1)
 
+                # Load deeper-tier prefix segments (FLASH/ICMS/COLDSTORE) — counted
+                # once per request; charged as Python-timed comp_time in the trace.
+                if req.is_prefill() and not req._deep_reload_counted and req.tier_reload:
+                    for dev, toks in req.tier_reload.items():
+                        tier_load_bytes[dev] = tier_load_bytes.get(dev, 0) + toks * self.memory.get_kv(1)
+                    req._deep_reload_counted = True
+
                 # Handle evicted requests
                 if req.evict:
                     self.memory.prefix_match(req)
@@ -554,6 +562,17 @@ class Scheduler:
                     evict_load_size += self.memory.get_evict_kv(req)
                     req.evict = False
                     self.logger.info("Loading the request #%d", req.id)
+
+            # A deep-tier prefix hit reloads that prefix's KV back into NPU. Make
+            # room for it by evicting NPU prefix cache first (reload bytes are
+            # per-rank, matching get_kv); otherwise the later insert can exceed
+            # NPU capacity. No-op unless NPU is tight AND a deep hit occurred, so
+            # normal (large-NPU) runs are unaffected.
+            deep_reload_bytes = sum(tier_load_bytes.values())
+            if deep_reload_bytes > 0:
+                npu_room = self.memory.avail_size(Device.NPU)
+                if deep_reload_bytes > npu_room:
+                    self.memory.evict_prefix_cache(deep_reload_bytes - npu_room, Device.NPU)
 
             # ============ STEP 5: Build batch with lists ============
             total_len = 0
@@ -577,6 +596,8 @@ class Scheduler:
                 storage_evict_size = (total_size - self.memory.avail_size(self.prefix_storage)) if total_size > self.memory.avail_size(self.prefix_storage) else 0
                 if storage_evict_size > 0:
                     self.memory.evict_prefix_cache(storage_evict_size, self.prefix_storage)
+                # Cascade: make room in the deeper spill tiers as well.
+                self.memory.make_room_deep_tiers(total_size)
 
             for req in batch_req:
                 # Update the prefix cache for incoming batch
@@ -620,10 +641,17 @@ class Scheduler:
                     self.memory.storage_cache_evicted_req(req)
 
             
+            # Deep-tier reloads -> Python-timed compute nodes (label, comp_time_ns).
+            tier_loads = []
+            for dev, b in tier_load_bytes.items():
+                lat = self.memory.tier_load_latency_ns(dev, b)
+                if lat > 0:
+                    tier_loads.append((f"{dev.name.lower()}_load", lat))
+
             # For debugging
             # self.memory.npu_prefix_cache.pretty_print()
             # self.memory.npu_prefix_cache.print_prefix_info()
-            batch = Batch(self.get_batch_id(), self.model, total_len, kv_len, q_list, k_list, num_prefill, num_decode, prefill_q_list, prefill_k_list, decode_k_list, current, kv_size, evict_size, evict_load_size + prefix_load_size)
+            batch = Batch(self.get_batch_id(), self.model, total_len, kv_len, q_list, k_list, num_prefill, num_decode, prefill_q_list, prefill_k_list, decode_k_list, current, kv_size, evict_size, evict_load_size + prefix_load_size, tier_loads=tier_loads)
             batch.fired.append(sys)
             batch.requests.extend(batch_req)
             self.inflight.append(batch)

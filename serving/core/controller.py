@@ -14,6 +14,15 @@ class Controller():
         out = [""]
         while "Waiting" not in out[-1] and out[-1] != "Checking Non-Exited Systems ...\n":
             line = p.stdout.readline()
+            # An empty string from readline() means EOF: the ASTRA-Sim
+            # subprocess has exited/crashed. Without this guard the loop would
+            # spin forever appending "" (100% CPU + unbounded memory growth).
+            if line == "":
+                raise RuntimeError(
+                    "ASTRA-Sim process terminated unexpectedly (EOF while waiting "
+                    "for iteration output). Check the generated trace and "
+                    "astra-sim/inputs/ for this run."
+                )
             # For debugging
             # print(line, end='')
             out.append(line)
@@ -23,7 +32,13 @@ class Controller():
     def check_end(self, p):
         out = ["",""]
         while out[-2] != "All Request Has Been Exited\n" and out[-2] != "ERROR: Some Requests Remain\n":
-            out.append(p.stdout.readline())
+            line = p.stdout.readline()
+            if line == "":
+                raise RuntimeError(
+                    "ASTRA-Sim process terminated unexpectedly (EOF during "
+                    "end-of-simulation check)."
+                )
+            out.append(line)
             p.stdout.flush()
         print(out[-4], end='')
         print(out[-2], end='')

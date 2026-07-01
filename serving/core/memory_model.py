@@ -12,9 +12,12 @@ class Device(Enum):
     NPU = 1
     CPU = 2
     CXL = 3
+    FLASH = 4
+    ICMS = 5
+    COLDSTORE = 6
 
 class MemoryModel():
-    def __init__(self, model, instance_id, node_id, num_npus, tp_size, npu_mem, cpu_mem, block_size, fp, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, cxl_mem=0, ep_size=1, pp_size=1, kv_cache_dtype='auto'):
+    def __init__(self, model, instance_id, node_id, num_npus, tp_size, npu_mem, cpu_mem, block_size, fp, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, cxl_mem=0, ep_size=1, pp_size=1, kv_cache_dtype='auto', deep_tiers=None):
         self.model = model
         self.node_id = node_id
         self.instance_id = instance_id
@@ -93,6 +96,37 @@ class MemoryModel():
         self._npu_cache_hashtolen = {}
         self._cpu_cache_hashtolen = {}
         self._bytes_per_token = self.get_kv(1)  # bytes per token for kv cache
+
+        # -------------------- Deep spill tiers (FLASH / ICMS / COLDSTORE) --------------------
+        # Python-timed tiers with no ASTRA-Sim representation. Each keeps its
+        # own RadixCache and access-cost parameters; they are written through
+        # whenever the CPU tier is written and probed (deepest-first) on a hit.
+        self.deep_tiers = []
+        self._deep_tier_by_device = {}
+        # Per-tier prefix-hit accounting (shared denominator + per-device hits).
+        self.tier_requested_tokens = 0
+        self.tier_hit_tokens = {Device.NPU: 0}
+        if prefix_storage is not None:
+            self.tier_hit_tokens[prefix_storage] = 0
+        if enable_prefix_caching and deep_tiers:
+            one_token_kv_size = self.get_kv(1)
+            for spec in deep_tiers:
+                cache = spec.get('cache')
+                if cache is None:
+                    cache = RadixCache(
+                        node_id=self.node_id, device=spec['name'],
+                        instance_id=self.instance_id, page_size=1,
+                        capacity=int(spec.get('capacity_gb', 0) * GB_TO_BYTE),
+                        kv_size=(one_token_kv_size * self.num_npus),
+                        enable_kv_cache_events=False)
+                tier = {
+                    'device': spec['device'], 'name': spec['name'], 'cache': cache,
+                    'mem_bw': spec.get('mem_bw', 0), 'mem_latency': spec.get('mem_latency', 0),
+                    'link_bw': spec.get('link_bw', 0), 'link_latency': spec.get('link_latency', 0),
+                }
+                self.deep_tiers.append(tier)
+                self._deep_tier_by_device[spec['device']] = tier
+                self.tier_hit_tokens[spec['device']] = 0
     def get_weight(self):
         """Per-GPU model weight in bytes.
 
@@ -374,6 +408,10 @@ class MemoryModel():
             # should lock evicted kv cache in cpu
             self.second_tier_prefix_cache.inc_lock_ref(new_last_node)
             req.cpu_last_node = new_last_node
+            # Write through to the deeper spill tiers so an NPU eviction is
+            # retained progressively deeper in the hierarchy.
+            for tier in self.deep_tiers:
+                tier['cache'].cache_unfinished_req(req, update=False)
             self.apply_kv_cache_events()
 
     def evictable_size(self, device):
@@ -444,6 +482,9 @@ class MemoryModel():
                 self.npu_prefix_cache.pretty_print()
         elif device == Device.CPU or device == Device.CXL:
             self.second_tier_prefix_cache.cache_unfinished_req(req)
+            # Write through to deeper spill tiers (FLASH/ICMS/COLDSTORE).
+            for tier in self.deep_tiers:
+                tier['cache'].cache_unfinished_req(req, update=False)
             if self.logger.isEnabledFor(logging.DEBUG):
                 # print(f"cache_unfinished_req of req {req.id}")
                 # print(f"===============AFTER INSERT: {self.second_tier_prefix_cache.device} PREFIX CAHCE at pid={os.getpid()} tid={threading.get_ident()} pool_id={id(self.second_tier_prefix_cache)}, size={self.second_tier_prefix_cache.total_size()}=================")
@@ -482,6 +523,9 @@ class MemoryModel():
                 self.npu_prefix_cache.pretty_print()
         elif device == Device.CPU or device == Device.CXL:
             self.second_tier_prefix_cache.cache_finished_req(req)
+            # Write through to deeper spill tiers (FLASH/ICMS/COLDSTORE).
+            for tier in self.deep_tiers:
+                tier['cache'].cache_finished_req(req)
             if self.logger.isEnabledFor(logging.DEBUG):
                 # print(f"cache_finished_req of req {req.id}")
                 # print(f"===============AFTER INSERT: {self.second_tier_prefix_cache.device} PREFIX CAHCE at pid={os.getpid()} tid={threading.get_ident()} pool_id={id(self.second_tier_prefix_cache)}, size={self.second_tier_prefix_cache.total_size()}=================")
@@ -509,6 +553,46 @@ class MemoryModel():
 
         self.apply_kv_cache_events()
 
+    # -------------------- Deep spill tiers (FLASH/ICMS/COLDSTORE) --------------------
+
+    def make_room_deep_tiers(self, total_size):
+        """Evict LRU from each deep spill tier so it can hold ``total_size``
+        full-cluster bytes. Cascading spillover: content a shallower tier drops
+        is retained here until this tier also fills (then it is dropped)."""
+        if not self.enable_prefix_caching:
+            return
+        for tier in self.deep_tiers:
+            cache = tier['cache']
+            avail = cache.avail_size()
+            if total_size > avail:
+                need = total_size - avail
+                space_needed = (need + cache.kv_size - 1) // cache.kv_size
+                cache.evict(space_needed)
+
+    def tier_load_latency_ns(self, device, load_bytes):
+        """Python-side reload latency (ns) for a hit served from a deep tier.
+        ``mem_bw``/``link_bw`` are GB/s (1 GB/s == 1 byte/ns); latencies are ns.
+        Node-local tiers (no link fields) pay only device access; remote tiers
+        (ICMS/COLDSTORE) add their network-path term."""
+        tier = self._deep_tier_by_device.get(device)
+        if tier is None or load_bytes <= 0:
+            return 0
+        t = tier['mem_latency'] + (load_bytes / tier['mem_bw'] if tier['mem_bw'] else 0)
+        if tier['link_bw']:
+            t += tier['link_latency'] + (load_bytes / tier['link_bw'])
+        elif tier['link_latency']:
+            t += tier['link_latency']
+        return t
+
+    def tier_hit_report(self):
+        """(requested_tokens, {Device: hit_tokens}) for per-tier hit ratios."""
+        return self.tier_requested_tokens, dict(self.tier_hit_tokens)
+
+    def deep_tier_usage(self):
+        """Ordered [(name, used_bytes, capacity_bytes)] for the deep tiers."""
+        return [(t['name'], t['cache'].total_memory_usage(), t['cache'].capacity)
+                for t in self.deep_tiers]
+
     # -------------------- Prefix Cache Helpers --------------------
 
     def prefix_match(self, req): # req.prefix_cache_hit initialization 
@@ -532,9 +616,33 @@ class MemoryModel():
             req.storage_cache_hit = 0
             req.storage_last_node = None
         
-        req.prefix_cache_hit = max(req.npu_cache_hit, req.storage_cache_hit)
-        # if req.num_computed_tokens < req.prefix_cache_hit:
-        #     req.num_computed_tokens = req.prefix_cache_hit
+        # Deep spill tiers (FLASH/ICMS/COLDSTORE): probe each in order and
+        # record the incremental reload segment served by each tier (tokens not
+        # already covered by a shallower/closer tier). Reload is charged to the
+        # shallowest tier that still holds each segment.
+        req.tier_reload = {}
+        running = max(req.npu_cache_hit, req.storage_cache_hit)
+        for tier in self.deep_tiers:
+            h = tier['cache'].match_prefix(tokens[:req.input]).hit_length
+            inc = max(0, h - running)
+            if inc > 0:
+                req.tier_reload[tier['device']] = inc
+            running = max(running, h)
+
+        req.prefix_cache_hit = running
+
+        # Per-tier hit-token accounting (once per request).
+        if req.is_init and not req._prefix_tier_stats_counted:
+            self.tier_requested_tokens += req.original_input
+            self.tier_hit_tokens[Device.NPU] = self.tier_hit_tokens.get(Device.NPU, 0) + req.npu_cache_hit
+            if self.prefix_storage is not None:
+                self.tier_hit_tokens[self.prefix_storage] = (
+                    self.tier_hit_tokens.get(self.prefix_storage, 0)
+                    + max(0, req.storage_cache_hit - req.npu_cache_hit))
+            for dev, inc in req.tier_reload.items():
+                self.tier_hit_tokens[dev] = self.tier_hit_tokens.get(dev, 0) + inc
+            req._prefix_tier_stats_counted = True
+
         if req.num_computed_tokens == 0:
             req.num_computed_tokens = req.prefix_cache_hit
             # print(f"Request[{req.id}] prefix cache hit: {req.prefix_cache_hit} tokens (NPU: {req.npu_cache_hit}, {self.prefix_storage}: {req.storage_cache_hit})")

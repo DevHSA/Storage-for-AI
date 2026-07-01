@@ -395,6 +395,14 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
     inst_id = 0
     pim_models = [None for _ in range(num_nodes)]
 
+    # Optional deep spill tiers (FLASH / ICMS / COLDSTORE). These are modeled
+    # entirely in the Python wrapper (latency injected as trace comp_time) and
+    # are deliberately NOT emitted into memory_expansion.json, so the Chakra
+    # converter / ASTRA-Sim inputs stay byte-identical. Collected per node.
+    tier_key_map = [("FLASH", "flash_mem"), ("ICMS", "icms_mem"), ("COLDSTORE", "coldstore_mem")]
+    tier_configs = {name: {"size": [], "mem_bw": [], "mem_latency": [], "link_bw": [], "link_latency": []}
+                    for name, _ in tier_key_map}
+
     for node_config in nodes:
         num_instances = node_config["num_instances"]
         instances = node_config["instances"]
@@ -464,6 +472,22 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
                     raise KeyError(f"Missing required key '{key}' in 'cpu_mem' configuration.")
                 
         cpu_mem_size.append(cpu_mem["mem_size"])
+
+        # Parse optional deep spill tiers for this node (Python-side only).
+        for _tname, _tkey in tier_key_map:
+            _blk = node_config.get(_tkey)
+            if _blk is not None:
+                for _k in ["mem_size", "mem_bw", "mem_latency"]:
+                    if _k not in _blk:
+                        raise KeyError(f"Missing required key '{_k}' in '{_tkey}' configuration.")
+                tier_configs[_tname]["size"].append(_blk["mem_size"])
+                tier_configs[_tname]["mem_bw"].append(_blk["mem_bw"])
+                tier_configs[_tname]["mem_latency"].append(_blk["mem_latency"])
+                tier_configs[_tname]["link_bw"].append(_blk.get("link_bw", 0))
+                tier_configs[_tname]["link_latency"].append(_blk.get("link_latency", 0))
+            else:
+                for _f in ("size", "mem_bw", "mem_latency", "link_bw", "link_latency"):
+                    tier_configs[_tname][_f].append(0)
 
         if power_modeling: # add mem_size (dram size) to power config
             power = node_config["power"]
@@ -654,6 +678,7 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
         "total_npu": total_npu,
         "cpu_mem_size": cpu_mem_size,
         "cxl_mem_size": cxl_mem_size,
+        "tier_configs": tier_configs,
         "power_modeling": power_modeling,
         "power_configs": power_configs,
         "pim_models": pim_models,
