@@ -7,27 +7,27 @@
             "num_instances": 1,
             "cpu_mem": {
                 "mem_size": 0.25,
-                "mem_bw": 256,
-                "mem_latency": 100
+                "mem_bw": 200,
+                "mem_latency": 80
             },
             "flash_mem": {
                 "mem_size": 0.25,
-                "mem_bw": 32,
-                "mem_latency": 10000
+                "mem_bw": 8,
+                "mem_latency": 8000
             },
             "icms_mem": {
                 "mem_size": 0.25,
-                "mem_bw": 8,
+                "mem_bw": 32,
                 "mem_latency": 100000,
-                "link_bw": 50,
-                "link_latency": 500
+                "link_bw": 64,
+                "link_latency": 1000
             },
             "coldstore_mem": {
                 "mem_size": 50,
-                "mem_bw": 2,
-                "mem_latency": 1000000,
-                "link_bw": 10,
-                "link_latency": 5000
+                "mem_bw": 4,
+                "mem_latency": 3000000,
+                "link_bw": 16,
+                "link_latency": 10000
             },
             "instances": [
                 {
@@ -36,7 +36,7 @@
                     "npu_mem": {
                         "mem_size": 16,
                         "mem_bw": 1597,
-                        "mem_latency": 0
+                        "mem_latency": 5
                     },
                     "pd_type": null,
                     "tp_size": 1

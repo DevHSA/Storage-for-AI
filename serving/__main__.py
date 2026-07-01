@@ -325,6 +325,8 @@ def main():
     block_mode_on = cluster["block_mode_on"]
     total_npu = cluster["total_npu"]
     cpu_mem_size = cluster["cpu_mem_size"]
+    cpu_mem_bw = cluster["cpu_mem_bw"]
+    cpu_mem_latency = cluster["cpu_mem_latency"]
     power_modeling = cluster["power_modeling"]
     power_configs = cluster["power_configs"]
     pim_models = cluster["pim_models"]
@@ -354,16 +356,29 @@ def main():
     for i in range(num_instances):
         prefix_pool_inst_mapping[i] = None
 
-    # --prefix-storage is a DEPTH LIMIT on the NPU->CPU->FLASH->ICMS->COLDSTORE
-    # chain. The immediate second tier (handled by the existing ASTRA-Sim path)
-    # is always CPU when the chain is used; CXL stays a standalone legacy tier.
+    # Tier membership is CONFIG-DRIVEN: a deep tier is used iff its block is
+    # present in the cluster config (any subset works — e.g. drop `icms_mem` to
+    # skip ICMS). --prefix-storage still caps the depth (and enables the chain);
+    # the active deep tiers are those PRESENT in the config, in canonical order,
+    # up to and including the named cap. CXL stays a standalone legacy tier.
     _TIER_CHAIN = ['CPU', 'FLASH', 'ICMS', 'COLDSTORE']
     _NAME_TO_DEVICE = {'FLASH': Device.FLASH, 'ICMS': Device.ICMS, 'COLDSTORE': Device.COLDSTORE}
-    if prefix_storage in ('FLASH', 'ICMS', 'COLDSTORE'):
+    _tier_cfgs = cluster.get("tier_configs", {})
+
+    def _tier_in_config(name):
+        c = _tier_cfgs.get(name)
+        return bool(c) and len(c["size"]) == num_nodes and all(s and s > 0 for s in c["size"])
+
+    if prefix_storage in ('CPU', 'FLASH', 'ICMS', 'COLDSTORE'):
         storage_medium = 'CPU'
-        deep_tier_names = _TIER_CHAIN[1:_TIER_CHAIN.index(prefix_storage) + 1]
-    elif prefix_storage in ('CPU', 'CXL'):
-        storage_medium = prefix_storage
+        cap_idx = _TIER_CHAIN.index(prefix_storage)
+        deep_tier_names = [t for t in _TIER_CHAIN[1:cap_idx + 1] if _tier_in_config(t)]
+        skipped = [t for t in _TIER_CHAIN[1:cap_idx + 1] if not _tier_in_config(t)]
+        active_chain = "NPU -> CPU" + "".join(f" -> {t}" for t in deep_tier_names)
+        print_markup(f"Active prefix-cache tiers: {active_chain}"
+                     + (f"   (skipped, absent from config: {', '.join(skipped)})" if skipped else ""))
+    elif prefix_storage == 'CXL':
+        storage_medium = 'CXL'
         deep_tier_names = []
     else:
         storage_medium = 'None'
@@ -442,7 +457,7 @@ def main():
                     pools.append(RadixCache(
                         node_id=i,
                         device=tname,
-                        page_size=256,
+                        page_size=1,   # token granularity, like the CXL pool
                         capacity=int(tcfg["size"][i] * GB_TO_BYTE),
                         kv_size=_pool_kv_bytes_per_token(node2inst_mapping[i]),
                         enable_kv_cache_events=False))
@@ -507,6 +522,8 @@ def main():
             ep_size=instance.get("ep_total", 1),
             kv_cache_dtype=inst_cfg["kv_cache_dtype"],
             deep_tiers=deep_tier_specs_by_inst.get(instance_id, []),
+            cpu_mem_bw=cpu_mem_bw[instance["node_id"]],
+            cpu_mem_latency=cpu_mem_latency[instance["node_id"]],
         ))
 
     # Controller for astra-sim process communication
@@ -1016,6 +1033,8 @@ def main():
     # calculate prefix caching metrics (per tier: NPU -> CPU/CXL -> deep tiers)
     tier_requested_tokens = 0
     tier_hit_tokens = {}          # Device -> hit tokens (summed across instances)
+    tier_reload_ns = {}           # Device -> analytical reload latency (ns), summed
+    tier_reload_bytes = {}        # Device -> reloaded bytes, summed
     if any_prefix_caching:
         for i in range(num_instances):
             if not schedulers[i].enable_prefix_caching:
@@ -1024,6 +1043,11 @@ def main():
             tier_requested_tokens += req_i
             for dev, h in hits_i.items():
                 tier_hit_tokens[dev] = tier_hit_tokens.get(dev, 0) + h
+            rl_i, rb_i = schedulers[i].memory.reload_report()
+            for dev, v in rl_i.items():
+                tier_reload_ns[dev] = tier_reload_ns.get(dev, 0) + v
+            for dev, v in rb_i.items():
+                tier_reload_bytes[dev] = tier_reload_bytes.get(dev, 0) + v
 
     def _tier_usage_bytes():
         """Per-Device (used_bytes, capacity_bytes), pool-aware (dedup shared pools)."""
@@ -1085,17 +1109,28 @@ def main():
         usage = _tier_usage_bytes()
         if tier_requested_tokens > 0:
             total_hit = 0
-            print_markup(f"{'Tier':<10}{'Hit tokens':>12}{'Hit ratio':>12}{'End usage':>16}{'Capacity':>14}{'% used':>10}")
+            print_markup(f"{'Tier':<10}{'Hit tokens':>11}{'Hit %':>9}{'Reload(ms)':>12}{'Usage(MB)':>12}{'Cap(GB)':>10}{'% used':>9}")
             for dev in ordered:
                 h = tier_hit_tokens.get(dev, 0)
                 total_hit += h
                 ratio = (h / tier_requested_tokens) * 100
                 used, cap = usage.get(dev, (0, 0))
                 pct = (used / cap * 100) if cap else 0.0
+                rl_ms = tier_reload_ns.get(dev, 0) / 1e6
                 print_markup(
-                    f"{dev.name:<10}{h:>12}{ratio:>11.2f}%"
-                    f"{used/MB_TO_BYTE:>13.2f} MB{cap/GB_TO_BYTE:>11.2f} GB{pct:>9.3f}%")
+                    f"{dev.name:<10}{h:>11}{ratio:>8.2f}%{rl_ms:>12.2f}"
+                    f"{used/MB_TO_BYTE:>12.2f}{cap/GB_TO_BYTE:>10.2f}{pct:>8.3f}%")
             print_markup(f"Total prefix hit ratio (%):                                         {(total_hit/tier_requested_tokens)*100:.2f}")
+            # Reload-latency metric: cost of serving hits from below NPU. NPU hits
+            # are free; deeper tiers cost more, so a config that keeps hits in a
+            # faster tier (e.g. ICMS vs COLDSTORE) shows a lower total here.
+            total_reload_ns = sum(tier_reload_ns.values())
+            reloaded_tokens = sum(tier_hit_tokens.get(d, 0) for d in ordered if d != Device.NPU)
+            print_markup(f"Total prefix-reload latency (ms):                                   {total_reload_ns/1e6:.3f}")
+            if current:
+                print_markup(f"Reload latency as % of total sim time:                              {total_reload_ns/current*100:.3f}")
+            if reloaded_tokens > 0:
+                print_markup(f"Mean reload latency per 1K reloaded tokens (ms):                    {(total_reload_ns/1e6)/(reloaded_tokens/1000):.3f}")
         else:
             print_markup("Prefix hit ratio (%):                                               N/A (no requests tracked)")
         print_rule()
@@ -1124,9 +1159,19 @@ def main():
         print(f"Saving each request's information to output file: {output_file}")
         for i in range(num_instances):
             schedulers[i].save_output(output_file, is_append=False if i == 0 else True)
-    
 
-if __name__ == "__main__": 
+        # Persist the full CLI output alongside the CSV, same base name (.txt),
+        # so the end-of-simulation results can be read later.
+        txt_file = os.path.splitext(output_file)[0] + '.txt'
+        txt_path = txt_file if os.path.isabs(txt_file) else f'../{txt_file}'
+        txt_dir = os.path.dirname(txt_path)
+        if txt_dir:
+            os.makedirs(txt_dir, exist_ok=True)
+        print(f"Saving console output to: {txt_file}")
+        save_output_text(txt_path)
+
+
+if __name__ == "__main__":
     # For simulation time breakdown
     # profiler = Profiler()
     # profiler.start()

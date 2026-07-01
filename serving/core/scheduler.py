@@ -20,7 +20,8 @@ class Scheduler:
                  num_npus, tp_size, pp_size, npu_mem, cpu_mem,
                  start_npu, pd_type, fp, block_size, req_num,
                  prioritize_prefill, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, enable_chunked_prefill=False,
-                 long_prefill_token_threshold=0, cxl_mem=0, ep_size=1, kv_cache_dtype='auto', deep_tiers=None):
+                 long_prefill_token_threshold=0, cxl_mem=0, ep_size=1, kv_cache_dtype='auto', deep_tiers=None,
+                 cpu_mem_bw=0, cpu_mem_latency=0):
         self.model = model
         self.config = get_config(model)
         self.node_id = node_id
@@ -46,7 +47,7 @@ class Scheduler:
         self.batch_ids = -1
 
         # memory model
-        self.memory = MemoryModel(model, instance_id, node_id, num_npus, tp_size, npu_mem, cpu_mem, block_size, fp, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, cxl_mem, ep_size=ep_size, pp_size=pp_size, kv_cache_dtype=kv_cache_dtype, deep_tiers=deep_tiers)
+        self.memory = MemoryModel(model, instance_id, node_id, num_npus, tp_size, npu_mem, cpu_mem, block_size, fp, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, cxl_mem, ep_size=ep_size, pp_size=pp_size, kv_cache_dtype=kv_cache_dtype, deep_tiers=deep_tiers, cpu_mem_bw=cpu_mem_bw, cpu_mem_latency=cpu_mem_latency)
 
         # logger
         self.logger = get_logger(self.__class__, node_id=node_id, instance_id=instance_id)
@@ -642,11 +643,19 @@ class Scheduler:
 
             
             # Deep-tier reloads -> Python-timed compute nodes (label, comp_time_ns).
+            # Also record per-tier reload cost for the reload-latency metric.
             tier_loads = []
             for dev, b in tier_load_bytes.items():
                 lat = self.memory.tier_load_latency_ns(dev, b)
+                self.memory.record_reload(dev, b, lat)
                 if lat > 0:
                     tier_loads.append((f"{dev.name.lower()}_load", lat))
+            # CPU reload cost (served via the ASTRA-Sim REMOTE path; the metric
+            # uses the same analytical model as the deep tiers for comparability).
+            if prefix_load_size > 0:
+                self.memory.record_reload(
+                    Device.CPU, prefix_load_size,
+                    self.memory.cpu_reload_latency_ns(prefix_load_size))
 
             # For debugging
             # self.memory.npu_prefix_cache.pretty_print()

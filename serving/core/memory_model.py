@@ -17,7 +17,7 @@ class Device(Enum):
     COLDSTORE = 6
 
 class MemoryModel():
-    def __init__(self, model, instance_id, node_id, num_npus, tp_size, npu_mem, cpu_mem, block_size, fp, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, cxl_mem=0, ep_size=1, pp_size=1, kv_cache_dtype='auto', deep_tiers=None):
+    def __init__(self, model, instance_id, node_id, num_npus, tp_size, npu_mem, cpu_mem, block_size, fp, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, cxl_mem=0, ep_size=1, pp_size=1, kv_cache_dtype='auto', deep_tiers=None, cpu_mem_bw=0, cpu_mem_latency=0):
         self.model = model
         self.node_id = node_id
         self.instance_id = instance_id
@@ -28,6 +28,8 @@ class MemoryModel():
         self.npu_mem = npu_mem * GB_TO_BYTE # GB -> Byte
         self.cpu_mem = cpu_mem * GB_TO_BYTE # GB -> Byte
         self.cxl_mem = cxl_mem * GB_TO_BYTE
+        self.cpu_mem_bw = cpu_mem_bw          # GB/s, for the reload-latency metric
+        self.cpu_mem_latency = cpu_mem_latency  # ns
         self.block_size = block_size
         self.fp = fp // 8 # bit -> byte of floating point
         self.kv_fp = 1 if kv_cache_dtype == 'fp8' else self.fp  # KV cache bytes per element
@@ -108,6 +110,10 @@ class MemoryModel():
         self.tier_hit_tokens = {Device.NPU: 0}
         if prefix_storage is not None:
             self.tier_hit_tokens[prefix_storage] = 0
+        # Per-tier reload cost accounting (analytical): a hit served from a tier
+        # below NPU must reload that KV into NPU. NPU hits cost 0 (already local).
+        self.reload_latency_ns = {}   # Device -> cumulative reload latency (ns)
+        self.reload_bytes = {}        # Device -> cumulative reloaded bytes
         if enable_prefix_caching and deep_tiers:
             one_token_kv_size = self.get_kv(1)
             for spec in deep_tiers:
@@ -584,9 +590,28 @@ class MemoryModel():
             t += tier['link_latency']
         return t
 
+    def cpu_reload_latency_ns(self, load_bytes):
+        """Analytical CPU (DRAM) reload latency (ns) for the reload metric.
+        CPU is node-local (no link term). mem_bw is GB/s (1 GB/s == 1 byte/ns)."""
+        if load_bytes <= 0:
+            return 0
+        return self.cpu_mem_latency + (load_bytes / self.cpu_mem_bw if self.cpu_mem_bw else 0)
+
+    def record_reload(self, device, load_bytes, latency_ns):
+        """Accumulate a prefix-cache reload (bytes moved from a tier into NPU
+        and the analytical latency it cost) for the per-tier reload metric."""
+        if load_bytes <= 0:
+            return
+        self.reload_latency_ns[device] = self.reload_latency_ns.get(device, 0) + latency_ns
+        self.reload_bytes[device] = self.reload_bytes.get(device, 0) + load_bytes
+
     def tier_hit_report(self):
         """(requested_tokens, {Device: hit_tokens}) for per-tier hit ratios."""
         return self.tier_requested_tokens, dict(self.tier_hit_tokens)
+
+    def reload_report(self):
+        """({Device: reload_latency_ns}, {Device: reload_bytes}) for the metric."""
+        return dict(self.reload_latency_ns), dict(self.reload_bytes)
 
     def deep_tier_usage(self):
         """Ordered [(name, used_bytes, capacity_bytes)] for the deep tiers."""

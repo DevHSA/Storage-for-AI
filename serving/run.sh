@@ -33,12 +33,29 @@
 # Multi-tier spillover DEMO: small caps + phased access evict prefix "A" down the
 # chain, then reuse it -> served from COLDSTORE with Python-injected reload latency
 # (a `coldstore_load` COMP node ~142 ms). Takes ~2-3 min (small NPU, long prefills).
+# python -m serving \
+#   --cluster-config 'configs/cluster/single_node_tiered_small.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+#   --dataset 'workloads/tier_demo_trace.jsonl' \
+#   --output 'outputs/tiered_demo_run.csv'
+
+# Tier-comparison: tiers are config-driven (a tier is used iff its block exists).
+# WITH ICMS -> reused prefix served from the fast ICMS tier.
 python -m serving \
-  --cluster-config 'configs/cluster/single_node_tiered_small.json' \
+  --cluster-config 'configs/cluster/cmp_with_icms.json' \
   --dtype float16 --block-size 16 \
   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
   --dataset 'workloads/tier_demo_trace.jsonl' \
-  --output 'outputs/tiered_demo_run.csv'
+  --output 'outputs/cmp_with_icms.csv'
+
+# WITHOUT ICMS (icms_mem absent from config) -> same reuse falls to slow COLDSTORE.
+# python -m serving \
+#   --cluster-config 'configs/cluster/cmp_no_icms.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+#   --dataset 'workloads/tier_demo_trace.jsonl' \
+#   --output 'outputs/cmp_no_icms.csv'
 
 # Multi instance example
 # python -m serving --cluster-config 'configs/cluster/single_node_multi_instance.json' \

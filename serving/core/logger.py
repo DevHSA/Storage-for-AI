@@ -95,7 +95,20 @@ _THEME = Theme(
 _console = Console(
     theme=_THEME,
     soft_wrap=True,
+    record=True,   # buffer all output so it can be persisted to a .txt file
 )
+
+
+def save_output_text(path: str) -> None:
+    """Persist everything printed to the console so far as plain text.
+
+    Used to mirror the end-of-simulation CLI output into a file next to the
+    per-request CSV so the run's results persist and can be read later.
+    """
+    try:
+        _console.save_text(path, styles=False)
+    except Exception as exc:  # never let logging break a completed run
+        _console.print(f"[warning]Could not save console output to {path}: {exc}[/]")
 
 _LEVEL_STYLES = {
     logging.DEBUG: "logging.level.debug",
@@ -419,13 +432,16 @@ def print_input_config(args: Any) -> None:
         return x if x not in (None, "") else "N/A"
 
     def _pc(x: Any) -> str:
+        # Deep tiers are config-driven, so the banner can only show the requested
+        # depth cap; the actual active chain is printed as "Active prefix-cache
+        # tiers" after the cluster config is parsed.
         chain = {
             "None": "xPU-Only",
             "CPU": "xPU + CPU",
             "CXL": "xPU + CXL",
-            "FLASH": "xPU + CPU + FLASH",
-            "ICMS": "xPU + CPU + FLASH + ICMS",
-            "COLDSTORE": "xPU + CPU + FLASH + ICMS + COLDSTORE",
+            "FLASH": "tiered, depth <= FLASH (config-driven)",
+            "ICMS": "tiered, depth <= ICMS (config-driven)",
+            "COLDSTORE": "tiered, depth <= COLDSTORE (config-driven)",
         }
         return chain.get(x, "None")
 
@@ -542,6 +558,7 @@ __all__ = [
     "print_markup",
     "print_banner",
     "print_input_config",
+    "save_output_text",
     "stage",
     "progress",
 ]

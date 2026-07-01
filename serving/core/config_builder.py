@@ -390,6 +390,8 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
     block_mode_on = []
     power_configs = []
     cpu_mem_size = []
+    cpu_mem_bw = []
+    cpu_mem_latency = []
     cpu_mem_enabled = False  # only one type of cpu memory config is supported for now (latency & bandwidth)
     node_id = 0
     inst_id = 0
@@ -472,6 +474,8 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
                     raise KeyError(f"Missing required key '{key}' in 'cpu_mem' configuration.")
                 
         cpu_mem_size.append(cpu_mem["mem_size"])
+        cpu_mem_bw.append(cpu_mem["mem_bw"])
+        cpu_mem_latency.append(cpu_mem["mem_latency"])
 
         # Parse optional deep spill tiers for this node (Python-side only).
         for _tname, _tkey in tier_key_map:
@@ -677,6 +681,8 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
         "block_mode_on": block_mode_on,
         "total_npu": total_npu,
         "cpu_mem_size": cpu_mem_size,
+        "cpu_mem_bw": cpu_mem_bw,
+        "cpu_mem_latency": cpu_mem_latency,
         "cxl_mem_size": cxl_mem_size,
         "tier_configs": tier_configs,
         "power_modeling": power_modeling,

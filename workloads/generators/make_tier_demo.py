@@ -10,7 +10,11 @@ Pattern:
                                       timed deep-tier reload latency).
 
 Usage:
-  python make_tier_demo.py <out.jsonl> [n_filler] [prefix_len] [suffix_len] [out_len] [stagger_ms]
+  python make_tier_demo.py <out.jsonl> [n_filler] [prefix_len] [suffix_len] [out_len] [stagger_ms] [a_len]
+
+`a_len` (default = prefix_len) sets the length of the REUSED prefix A separately
+from the filler prefix length, so A can be small (small reload -> latency in the
+tier's access-latency scale) while fillers are big enough to evict A downward.
 """
 import json
 import sys
@@ -21,8 +25,9 @@ prefix_len = int(sys.argv[3]) if len(sys.argv) > 3 else 320
 suffix_len = int(sys.argv[4]) if len(sys.argv) > 4 else 32
 out_len = int(sys.argv[5]) if len(sys.argv) > 5 else 8
 stagger_ms = float(sys.argv[6]) if len(sys.argv) > 6 else 60.0
+a_len = int(sys.argv[7]) if len(sys.argv) > 7 else prefix_len
 
-A = list(range(1, prefix_len + 1))            # the reused prefix
+A = list(range(1, a_len + 1))                 # the reused prefix
 rows = []
 
 def rec(idx, prefix, tag):
@@ -49,4 +54,4 @@ with open(out, "w") as f:
         f.write(json.dumps(r) + "\n")
 
 print(f"wrote {len(rows)} requests to {out} "
-      f"(A + {n_filler} fillers + A-reuse; prefix {prefix_len} toks)")
+      f"(A[{a_len} toks] + {n_filler} fillers[{prefix_len} toks] + A-reuse)")
