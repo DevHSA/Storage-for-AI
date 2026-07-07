@@ -19,3 +19,6 @@ bench/results/
 .copilot/
 .aider*
 .continue/
+
+# generated workload traces (regenerate via workloads/generators/*.py)
+workloads/*.jsonl

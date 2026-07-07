@@ -15,7 +15,7 @@
                 "mem_bw": 8,
                 "mem_latency": 8000
             },
-            "icms_mem": {
+            "jbof_mem": {
                 "mem_size": 8192,
                 "mem_bw": 32,
                 "mem_latency": 100000,

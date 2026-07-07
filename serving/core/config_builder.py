@@ -397,12 +397,16 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
     inst_id = 0
     pim_models = [None for _ in range(num_nodes)]
 
-    # Optional deep spill tiers (FLASH / ICMS / COLDSTORE). These are modeled
-    # entirely in the Python wrapper (latency injected as trace comp_time) and
-    # are deliberately NOT emitted into memory_expansion.json, so the Chakra
-    # converter / ASTRA-Sim inputs stay byte-identical. Collected per node.
-    tier_key_map = [("FLASH", "flash_mem"), ("ICMS", "icms_mem"), ("COLDSTORE", "coldstore_mem")]
-    tier_configs = {name: {"size": [], "mem_bw": [], "mem_latency": [], "link_bw": [], "link_latency": []}
+    # Optional deep spill tiers (FLASH / JBOF / COLDSTORE). Their prefix-cache
+    # membership is modeled in the Python wrapper (RadixCache per tier), while
+    # their reload *timing* is now emitted into memory_expansion.json so ASTRA-Sim
+    # times each reload (with contention) as a real MEM_LOAD node. Collected per
+    # node. Optional per-tier `memory_type`/`num_devices` override the pooling
+    # defaults (FLASH -> PER_NODE, JBOF/COLDSTORE -> shared MEMORY_POOL); e.g. set
+    # `"memory_type": "PER_NPU_MEMORY_EXPANSION"` to disable reload contention.
+    tier_key_map = [("FLASH", "flash_mem"), ("JBOF", "jbof_mem"), ("COLDSTORE", "coldstore_mem")]
+    tier_configs = {name: {"size": [], "mem_bw": [], "mem_latency": [], "link_bw": [], "link_latency": [],
+                           "memory_type": [], "num_devices": []}
                     for name, _ in tier_key_map}
 
     for node_config in nodes:
@@ -477,7 +481,7 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
         cpu_mem_bw.append(cpu_mem["mem_bw"])
         cpu_mem_latency.append(cpu_mem["mem_latency"])
 
-        # Parse optional deep spill tiers for this node (Python-side only).
+        # Parse optional deep spill tiers for this node.
         for _tname, _tkey in tier_key_map:
             _blk = node_config.get(_tkey)
             if _blk is not None:
@@ -489,9 +493,13 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
                 tier_configs[_tname]["mem_latency"].append(_blk["mem_latency"])
                 tier_configs[_tname]["link_bw"].append(_blk.get("link_bw", 0))
                 tier_configs[_tname]["link_latency"].append(_blk.get("link_latency", 0))
+                tier_configs[_tname]["memory_type"].append(_blk.get("memory_type"))
+                tier_configs[_tname]["num_devices"].append(_blk.get("num_devices"))
             else:
                 for _f in ("size", "mem_bw", "mem_latency", "link_bw", "link_latency"):
                     tier_configs[_tname][_f].append(0)
+                tier_configs[_tname]["memory_type"].append(None)
+                tier_configs[_tname]["num_devices"].append(None)
 
         if power_modeling: # add mem_size (dram size) to power config
             power = node_config["power"]
@@ -662,6 +670,37 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
 
     # Generate the final ASTRA-Sim input files after all instances are known.
     _create_network_config(network_config_path, total_instances, link_bw, link_latency)
+
+    # Emit deep spill tiers (FLASH/JBOF/COLDSTORE) into memory_expansion.json so
+    # ASTRA-Sim times their reloads with its analytical memory model (real
+    # MEM_LOAD nodes). Every deep tier is given ONE channel per rack (num-devices
+    # = num_nodes), indexed by the requesting rack's node_id. FLASH is node-local
+    # (PER_NODE); JBOF/COLDSTORE are ONE pod-wide shared *cache* (see __main__),
+    # but reached through per-rack BlueField-4 channels here (MEMORY_POOL), so the
+    # 16 racks' reloads run on parallel channels (aggregate 16x bandwidth) while
+    # the 72 GPUs within a rack serialize on their channel. Physical params come
+    # from the first node that defines the tier (tiers are homogeneous across nodes).
+    for _tname, _tkey in tier_key_map:
+        _rep = next((i for i, s in enumerate(tier_configs[_tname]["size"]) if s), None)
+        if _rep is None:
+            continue
+        _mtype = tier_configs[_tname]["memory_type"][_rep] or (
+            "PER_NODE_MEMORY_EXPANSION" if _tname == "FLASH" else "MEMORY_POOL")
+        _ndev = tier_configs[_tname]["num_devices"][_rep] or num_nodes
+        _blk = {
+            "memory-type": _mtype,
+            "mem-bw": tier_configs[_tname]["mem_bw"][_rep],
+            "mem-latency": tier_configs[_tname]["mem_latency"][_rep],
+            "num-devices": _ndev,
+        }
+        _lbw = tier_configs[_tname]["link_bw"][_rep]
+        _llat = tier_configs[_tname]["link_latency"][_rep]
+        if _lbw:
+            _blk["link-bw"] = _lbw
+        if _llat:
+            _blk["link-latency"] = _llat
+        memory_config[_tkey] = _blk
+
     with open(memory_config_path, "w", encoding="utf-8") as f:
         json.dump(memory_config, f, ensure_ascii=False, indent=2)
     _validate_memory_config(memory_config_path, placement, enable_local_offloading)

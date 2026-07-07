@@ -10,6 +10,7 @@ import os
 import subprocess
 import argparse
 import json
+import numpy as np
 from time import time
 from collections import defaultdict
 
@@ -231,12 +232,12 @@ def main():
     parser.add_argument('--enable-prefix-sharing', action='store_true', default=False,
                         help='enable second-tier prefix cache pooling across instances within a node')
     parser.add_argument('--prefix-storage', type=str,
-                        choices=['None', 'CPU', 'CXL', 'FLASH', 'ICMS', 'COLDSTORE'], default='None',
+                        choices=['None', 'CPU', 'CXL', 'FLASH', 'JBOF', 'COLDSTORE'], default='None',
                         help='deepest prefix-cache spill tier. None = NPU only; CXL = legacy standalone '
-                        'second tier. CPU/FLASH/ICMS/COLDSTORE select the depth of the '
-                        'NPU->CPU->FLASH->ICMS->COLDSTORE chain: the named tier and every shallower tier '
+                        'second tier. CPU/FLASH/JBOF/COLDSTORE select the depth of the '
+                        'NPU->CPU->FLASH->JBOF->COLDSTORE chain: the named tier and every shallower tier '
                         'are used, deeper tiers are unused (spill past the limit is dropped). '
-                        'Requires --enable-prefix-sharing for FLASH/ICMS/COLDSTORE.')
+                        'Requires --enable-prefix-sharing for FLASH/JBOF/COLDSTORE.')
     parser.add_argument('--enable-local-offloading', action='store_true', default=False,
                         help='enable weight offloading to local (NPU) memory. '
                         'Recommended to disable unless weight memory access is not counted in profiling')
@@ -276,8 +277,24 @@ def main():
     parser.add_argument('--network-backend', type=str, choices=['analytical', 'ns3'], default='analytical',
                         help='network simulation backend: analytical (fast, default) or ns3 (detailed, WIP)')
 
+    parser.add_argument('--trace-flow', nargs='?', const='outputs/flow_trace.log', default=None,
+                        help='Write a human-readable execution-flow log (every wrapper function call, in '
+                             'order, with its layer/file, one-line description, inputs and output) to this '
+                             'file, overwritten each run. If the flag is given with no value, defaults to '
+                             'outputs/flow_trace.log. For readability, use a tiny workload (e.g. --num-reqs 2).')
+    parser.add_argument('--trace-flow-full', action='store_true', default=False,
+                        help='With --trace-flow: log EVERY call/return (exhaustive, large file) instead of the '
+                             'default compact view that shows each function once + a call-count inventory.')
     args = parser.parse_args()
-    
+
+    # Optional execution-flow trace (purely for understanding the program flow).
+    # Installed as early as possible so the whole pipeline below is captured.
+    # NOTE: relative paths resolve against the repo root (the wrapper chdirs into
+    # astra-sim/ during a run), so outputs/flow_trace.log lands in the repo outputs/.
+    if getattr(args, 'trace_flow', None):
+        from serving.core.flow_tracer import install as _install_flow_trace
+        _install_flow_trace(args.trace_flow, full=args.trace_flow_full)
+
     args.run_id = resolve_run_id(args.run_id)
     run_paths = build_run_paths(astra_sim, args.run_id, args.inputs_root)
     args.inputs_root = run_paths.inputs_root
@@ -357,19 +374,19 @@ def main():
         prefix_pool_inst_mapping[i] = None
 
     # Tier membership is CONFIG-DRIVEN: a deep tier is used iff its block is
-    # present in the cluster config (any subset works — e.g. drop `icms_mem` to
-    # skip ICMS). --prefix-storage still caps the depth (and enables the chain);
+    # present in the cluster config (any subset works — e.g. drop `jbof_mem` to
+    # skip JBOF). --prefix-storage still caps the depth (and enables the chain);
     # the active deep tiers are those PRESENT in the config, in canonical order,
     # up to and including the named cap. CXL stays a standalone legacy tier.
-    _TIER_CHAIN = ['CPU', 'FLASH', 'ICMS', 'COLDSTORE']
-    _NAME_TO_DEVICE = {'FLASH': Device.FLASH, 'ICMS': Device.ICMS, 'COLDSTORE': Device.COLDSTORE}
+    _TIER_CHAIN = ['CPU', 'FLASH', 'JBOF', 'COLDSTORE']
+    _NAME_TO_DEVICE = {'FLASH': Device.FLASH, 'JBOF': Device.JBOF, 'COLDSTORE': Device.COLDSTORE}
     _tier_cfgs = cluster.get("tier_configs", {})
 
     def _tier_in_config(name):
         c = _tier_cfgs.get(name)
         return bool(c) and len(c["size"]) == num_nodes and all(s and s > 0 for s in c["size"])
 
-    if prefix_storage in ('CPU', 'FLASH', 'ICMS', 'COLDSTORE'):
+    if prefix_storage in ('CPU', 'FLASH', 'JBOF', 'COLDSTORE'):
         storage_medium = 'CPU'
         cap_idx = _TIER_CHAIN.index(prefix_storage)
         deep_tier_names = [t for t in _TIER_CHAIN[1:cap_idx + 1] if _tier_in_config(t)]
@@ -439,8 +456,14 @@ def main():
             # This means one node shares one prefix pool
             prefix_pool_inst_mapping = inst2node_mapping
 
-            # Build the deeper spill-tier pools (per node), truncated at the
-            # CLI depth limit. Each is a shared per-node RadixCache like CPU.
+            # Build the deeper spill-tier pools. FLASH (local SSD) is PER-NODE
+            # (per-rack). JBOF (JBOF) and COLDSTORE (network storage) are ONE
+            # POD-WIDE shared pool common to ALL racks: a prefix cached by any
+            # rack is reusable by every rack, because the physical JBOF/storage
+            # tier is pooled behind BlueField-4 and reachable pod-wide over
+            # Spectrum-X. Pod-wide capacity = sum of the per-node contributions
+            # declared in the config (e.g. 16 racks x 120 GiB = 1920 GiB JBOF).
+            _POD_WIDE_DEEP_TIERS = {"JBOF", "COLDSTORE"}
             tier_cfgs = cluster.get("tier_configs", {})
             for tname in deep_tier_names:
                 tcfg = tier_cfgs.get(tname)
@@ -448,30 +471,51 @@ def main():
                     raise RuntimeError(
                         f"--prefix-storage {prefix_storage} requires '{tname.lower()}_mem' "
                         f"to be configured in the cluster config")
-                pools = []
                 for i in range(num_prefix_pool):
                     if tcfg["size"][i] <= 0:
                         raise RuntimeError(
                             f"--prefix-storage {prefix_storage} requires '{tname.lower()}_mem' "
                             f"(mem_size > 0) on node {i}")
-                    pools.append(RadixCache(
-                        node_id=i,
+                if tname in _POD_WIDE_DEEP_TIERS:
+                    # ONE shared pool for the whole pod; every node maps to it.
+                    total_cap = int(sum(tcfg["size"][i] for i in range(num_prefix_pool)) * GB_TO_BYTE)
+                    shared = RadixCache(
+                        node_id=0,
                         device=tname,
                         page_size=1,   # token granularity, like the CXL pool
-                        capacity=int(tcfg["size"][i] * GB_TO_BYTE),
-                        kv_size=_pool_kv_bytes_per_token(node2inst_mapping[i]),
-                        enable_kv_cache_events=False))
-                deep_tier_pools[tname] = pools
+                        capacity=total_cap,
+                        kv_size=_pool_kv_bytes_per_token(list(range(num_instances))),
+                        enable_kv_cache_events=False)
+                    deep_tier_pools[tname] = [shared] * num_prefix_pool
+                else:
+                    pools = []
+                    for i in range(num_prefix_pool):
+                        pools.append(RadixCache(
+                            node_id=i,
+                            device=tname,
+                            page_size=1,   # token granularity, like the CXL pool
+                            capacity=int(tcfg["size"][i] * GB_TO_BYTE),
+                            kv_size=_pool_kv_bytes_per_token(node2inst_mapping[i]),
+                            enable_kv_cache_events=False))
+                    deep_tier_pools[tname] = pools
+
+            # Reporting capacity: pod-wide total for shared tiers, per-node for FLASH.
+            _deep_tier_total_gb = {
+                t: (sum(tier_cfgs[t]["size"][i] for i in range(num_prefix_pool))
+                    if t in _POD_WIDE_DEEP_TIERS else None)
+                for t in deep_tier_names}
 
             for inst_id in range(num_instances):
                 node = inst2node_mapping[inst_id]
                 specs = []
                 for tname in deep_tier_names:
                     tcfg = tier_cfgs[tname]
+                    _cap_gb = (_deep_tier_total_gb[tname]
+                               if tname in _POD_WIDE_DEEP_TIERS else tcfg["size"][node])
                     specs.append({
                         'device': _NAME_TO_DEVICE[tname], 'name': tname,
                         'cache': deep_tier_pools[tname][node],
-                        'capacity_gb': tcfg["size"][node],
+                        'capacity_gb': _cap_gb,
                         'mem_bw': tcfg["mem_bw"][node], 'mem_latency': tcfg["mem_latency"][node],
                         'link_bw': tcfg["link_bw"][node], 'link_latency': tcfg["link_latency"][node],
                     })
@@ -911,7 +955,7 @@ def main():
                             parts.append(f"Instance\\[{inst_ids[j]}]: {inst_cpu_util:.2f} %")
                         print_markup(line + "(" + ", ".join(parts) + ")")
 
-                    # Deep spill tiers (FLASH/ICMS/COLDSTORE) usage for this node.
+                    # Deep spill tiers (FLASH/JBOF/COLDSTORE) usage for this node.
                     for ti, tname in enumerate(deep_tier_names):
                         pools = deep_tier_pools.get(tname, [])
                         if node_id >= len(pools):
@@ -1072,12 +1116,18 @@ def main():
                     if st is not None:
                         u += st.total_memory_usage(); c += st.capacity
             usage[pool_device] = (u, c)
-        # Deep tiers (shared per-node pools).
+        # Deep tiers. FLASH is per-node (distinct pools -> sum all); JBOF/COLDSTORE
+        # are ONE pod-wide pool referenced once per node -> dedup by object id so
+        # the shared pool is counted exactly once.
         for tname in deep_tier_names:
             pools = deep_tier_pools.get(tname, [])
+            uniq = []                       # dedup by identity (builtin id() is
+            for p in pools:                 # shadowed by a local 'id' in main())
+                if all(p is not q for q in uniq):
+                    uniq.append(p)
             usage[_NAME_TO_DEVICE[tname]] = (
-                sum(p.total_memory_usage() for p in pools),
-                sum(p.capacity for p in pools))
+                sum(p.total_memory_usage() for p in uniq),
+                sum(p.capacity for p in uniq))
         return usage
 
     # This is total system's throughput
@@ -1123,7 +1173,7 @@ def main():
             print_markup(f"Total prefix hit ratio (%):                                         {(total_hit/tier_requested_tokens)*100:.2f}")
             # Reload-latency metric: cost of serving hits from below NPU. NPU hits
             # are free; deeper tiers cost more, so a config that keeps hits in a
-            # faster tier (e.g. ICMS vs COLDSTORE) shows a lower total here.
+            # faster tier (e.g. JBOF vs COLDSTORE) shows a lower total here.
             total_reload_ns = sum(tier_reload_ns.values())
             reloaded_tokens = sum(tier_hit_tokens.get(d, 0) for d in ordered if d != Device.NPU)
             print_markup(f"Total prefix-reload latency (ms):                                   {total_reload_ns/1e6:.3f}")
@@ -1142,11 +1192,36 @@ def main():
         power_model.print_power_summary()
         print_markup(f"Power per {1/RATIO} sec (W): {power_model.power_time_series}")
         print_rule()
-    # Each instacne results
-    for i in range(num_instances):
-        print_rule(f"[sim.tagline]Instance \\[{i}][/]")
-        schedulers[i].print_result()
-        print_rule()
+    # ---- Cluster-wide latency summary (pooled across ALL instances) ----
+    # TTFT / TBT are the metrics that expose the tiered-cache benefit: a reused
+    # prefix served from a fast tier keeps TTFT low, while a slow-tier reload
+    # inflates the TTFT tail. These used to be printed per-instance (unreadable at
+    # pod scale), so pool every finished request and report the distribution once.
+    all_ttft = [r.ttft    for i in range(num_instances) for r in schedulers[i].done if r.ttft    is not None and r.ttft    >= 0]
+    all_tpot = [r.tpot    for i in range(num_instances) for r in schedulers[i].done if r.tpot    is not None and r.tpot    >= 0]
+    all_e2e  = [r.latency for i in range(num_instances) for r in schedulers[i].done if r.latency is not None and r.latency >= 0]
+    n_done   = sum(len(schedulers[i].done) for i in range(num_instances))
+    print_rule("[sim.tagline]Latency Summary (cluster-wide)[/]")
+    print_markup(f"Finished requests: {n_done}    Instances: {num_instances}")
+    print_markup(f"{'Metric':<18}{'mean':>10}{'p50':>10}{'p90':>10}{'p99':>10}{'max':>10}    (ms)")
+    def _lat_row(name, values):
+        if not values:
+            print_markup(f"{name:<18}{'--':>10}{'--':>10}{'--':>10}{'--':>10}{'--':>10}")
+            return
+        a = np.array(values, dtype=float) / 1_000_000.0   # ns -> ms
+        print_markup(f"{name:<18}{np.mean(a):>10.2f}{np.percentile(a,50):>10.2f}"
+                     f"{np.percentile(a,90):>10.2f}{np.percentile(a,99):>10.2f}{np.max(a):>10.2f}")
+    _lat_row("TTFT", all_ttft)
+    _lat_row("TBT (per-token)", all_tpot)
+    _lat_row("E2E latency", all_e2e)
+    print_rule()
+
+    # Per-instance detail only for small runs (avoids hundreds of blocks at pod scale).
+    if num_instances <= 4:
+        for i in range(num_instances):
+            print_rule(f"[sim.tagline]Instance \\[{i}][/]")
+            schedulers[i].print_result()
+            print_rule()
     
     # Important informations about metrics
     # The TTFT (Time to First Token) in our simulator differs from vllm. 

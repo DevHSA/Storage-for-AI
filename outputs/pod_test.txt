@@ -1,0 +1,94 @@
+─────────────────────────────── LLMServingSim2.0 ───────────────────────────────
+  A Unified Simulator for Heterogeneous Hardware and Serving Techniques in LLM  
+────────────────────────────────────────────────────────────────────────────────
+      _    _    __  __ ___              _           ___ _       ___   __        
+     | |  | |  |  \/  / __| ___ _ ___ _(_)_ _  __ _/ __(_)_ __ |_  ) /  \       
+     | |__| |__| |\/| \__ \/ -_) '_\ V / | ' \/ _` \__ \ | '  \ / / | () |      
+     |____|____|_|  |_|___/\___|_|  \_/|_|_||_\__, |___/_|_|_|_/___(_)__/       
+                                              |___/                             
+────────────────────────────────────────────────────────────────────────────────
+                              Input configuration                               
+
+  • Cluster config             : configs/cluster/pod_test_2x1_cmx.json
+  • Run ID                     : run_1783335806003865_1942
+  • ASTRA-Sim inputs root      : /app/LLMServingSim/astra-sim/inputs/runs/run_1783335806003865_1942
+  • Dataset                    : workloads/pod_test_1ctx.jsonl
+  • Max num seqs               : 128
+  • Max batched tokens         : 2048
+  • Block size (tokens)        : 16
+  • Request routing            : RR
+  • Expert routing             : BALANCED
+  • Prefix caching             : ENABLED
+  • Chunked prefill            : ENABLED
+  • Prefix caching scheme      : tiered, depth <= COLDSTORE (config-driven)
+  • Centralized prefix caching : ENABLED
+  • Offload attention to PIM   : DISABLED
+  • Sub-batch interleaving     : DISABLED
+  • Prioritize prefill         : DISABLED
+  • Network backend            : analytical
+  • Log interval (s)           : 1.0
+  • Log level                  : WARNING
+────────────────────────────────────────────────────────────────────────────────
+▶ Starting simulation...
+
+Active prefix-cache tiers: NPU -> CPU -> FLASH -> ICMS -> COLDSTORE
+────────────────────────────────────────────────────────────────────────────────
+▶ Exiting simulation...
+
+────────────────────────────────────────────────────────────────────────────────
+▶ Simulation results...
+
+Total simulation time: 0h 0m 1.918s
+────────────────────────────── Throughput Results ──────────────────────────────
+Total requests:                                                     2
+Total clocks (ns):                                                  247525721
+Total latency (s):                                                  0.248
+Total input tokens:                                                 1032
+Total generated tokens:                                             8
+Request throughput (req/s):                                         8.08
+Average prompt throughput (tok/s):                                  4169.26
+Average generation throughput (tok/s):                              32.32
+Total token throughput (tok/s):                                     4201.58
+Throughput per 1.0 sec ([prompt_throughput], [gen_throughput]): []
+────────────────────────────────────────────────────────────────────────────────
+────────────────────── Prefix Caching Results (per tier) ───────────────────────
+Total requested prompt tokens:                                      1032
+Tier       Hit tokens    Hit %  Reload(ms)   Usage(MB)   Cap(GB)   % used
+NPU                 0    0.00%        0.00      128.00      2.08   5.995%
+CPU                 0    0.00%        0.00      128.00      4.00   3.125%
+FLASH               0    0.00%        0.00      129.75     12.00   1.056%
+ICMS              512   49.61%        1.80       65.75    240.00   0.027%
+COLDSTORE           0    0.00%        0.00       65.75   4000.00   0.002%
+Total prefix hit ratio (%):                                         49.61
+Total prefix-reload latency (ms):                                   1.803
+Reload latency as % of total sim time:                              0.728
+Mean reload latency per 1K reloaded tokens (ms):                    3.521
+────────────────────────────────────────────────────────────────────────────────
+───────────────────────────────── Instance [0] ─────────────────────────────────
+───────────────────────────── Time to First Token ──────────────────────────────
+Mean TTFT (ms):                                                     23.88
+Median TTFT (ms):                                                   23.88
+P99 TTFT (ms):                                                      23.88
+─────────────────── Time per Output Token (excl. 1st token) ────────────────────
+Mean TPOT (ms):                                                     11.28
+Median TPOT (ms):                                                   11.28
+P99 TPOT (ms):                                                      11.28
+───────────────────────────── Inter-token Latency ──────────────────────────────
+Mean ITL (ms) :                                                     11.28
+Median ITL (ms) :                                                   11.28
+P99 ITL (ms) :                                                      11.29
+────────────────────────────────────────────────────────────────────────────────
+───────────────────────────────── Instance [1] ─────────────────────────────────
+───────────────────────────── Time to First Token ──────────────────────────────
+Mean TTFT (ms):                                                     13.67
+Median TTFT (ms):                                                   13.67
+P99 TTFT (ms):                                                      13.67
+─────────────────── Time per Output Token (excl. 1st token) ────────────────────
+Mean TPOT (ms):                                                     11.29
+Median TPOT (ms):                                                   11.29
+P99 TPOT (ms):                                                      11.29
+───────────────────────────── Inter-token Latency ──────────────────────────────
+Mean ITL (ms) :                                                     11.29
+Median ITL (ms) :                                                   11.29
+P99 ITL (ms) :                                                      11.29
+────────────────────────────────────────────────────────────────────────────────

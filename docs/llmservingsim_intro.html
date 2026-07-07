@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Introducing LLMServingSim — Team Guide</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1f2328; --muted:#57606a; --line:#d0d7de;
+    --accent:#0969da; --accent2:#1a7f37;
+    --code-bg:#f6f8fa; --code-border:#d0d7de;
+    --npu:#1a7f37; --cpu:#0969da; --flash:#8250df; --jbof:#bc4c00; --cold:#6e7781;
+    --note:#0969da; --insight:#1a7f37; --gotcha:#9a6700;
+    --maxw:900px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:16px;line-height:1.65;}
+  .layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:0;max-width:1260px;margin:0 auto;}
+  nav.toc{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;
+    border-right:1px solid var(--line);padding:24px 18px;font-size:14px;background:#fbfcfd;}
+  nav.toc h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px;}
+  nav.toc a{display:block;color:var(--fg);text-decoration:none;padding:4px 8px;border-radius:6px;margin:1px 0;}
+  nav.toc a:hover{background:#eaeef2;color:var(--accent)}
+  nav.toc a.sub{margin-left:12px;color:var(--muted);font-size:13px}
+  main{padding:34px 40px 120px;max-width:var(--maxw);}
+  h1{font-size:32px;line-height:1.2;margin:0 0 6px}
+  .subtitle{color:var(--muted);font-size:17px;margin:0 0 26px}
+  h2{font-size:24px;margin:46px 0 12px;padding-top:10px;border-top:1px solid var(--line)}
+  h3{font-size:18px;margin:26px 0 8px}
+  p{margin:12px 0}
+  code{font-family:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+    font-size:.88em;background:var(--code-bg);border:1px solid var(--code-border);
+    border-radius:5px;padding:1px 5px;}
+  pre.code{font-family:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+    font-size:13px;line-height:1.5;background:var(--code-bg);border:1px solid var(--code-border);
+    border-left:4px solid var(--accent);border-radius:8px;padding:14px 16px;overflow-x:auto;margin:14px 0;}
+  pre.code .cm{color:#6a9955;font-style:italic}
+  pre.code .k{color:#0969da}
+  .cap{display:block;color:var(--muted);font-size:12.5px;margin:-8px 0 18px;font-family:monospace}
+  .box{border:1px solid var(--line);border-left-width:5px;border-radius:8px;padding:12px 16px;margin:16px 0;background:#fbfcfd}
+  .box .t{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+  .note{border-left-color:var(--note)} .note .t{color:var(--note)}
+  .insight{border-left-color:var(--insight)} .insight .t{color:var(--insight)}
+  .gotcha{border-left-color:var(--gotcha)} .gotcha .t{color:var(--gotcha)}
+  details{border:1px solid var(--line);border-radius:8px;margin:14px 0;background:#fbfcfd;overflow:hidden}
+  details>summary{cursor:pointer;padding:10px 14px;font-weight:600;font-size:14px;color:var(--accent);
+    list-style:none;user-select:none;background:#f6f8fa}
+  details>summary::before{content:"▸ ";color:var(--accent)}
+  details[open]>summary::before{content:"▾ "}
+  details>summary:hover{background:#eaeef2}
+  details .inner{padding:6px 16px 14px}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#f6f8fa;font-weight:600}
+  tbody tr:nth-child(even),tr:nth-child(even){background:#fbfcfd}
+  .num{font-family:monospace}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:12px;font-weight:700;color:#fff}
+  .tag-npu{background:var(--npu)} .tag-cpu{background:var(--cpu)} .tag-flash{background:var(--flash)}
+  .tag-jbof{background:var(--jbof)} .tag-cold{background:var(--cold)}
+  figure{margin:20px 0;text-align:center}
+  figure svg{max-width:100%;height:auto}
+  figcaption{color:var(--muted);font-size:13px;margin-top:8px}
+  .lead{font-size:17px}
+  hr{border:0;border-top:1px solid var(--line);margin:30px 0}
+  .step{display:inline-block;background:var(--accent);color:#fff;border-radius:20px;padding:0 9px;font-size:13px;font-weight:700;margin-right:6px}
+  @media (max-width:900px){
+    .layout{grid-template-columns:1fr}
+    nav.toc{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
+    main{padding:24px 18px 80px}
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <a href="#overview">1. Overview: the two brains</a>
+  <a href="#firstrun">2. Your first run (8 GPUs)</a>
+  <a href="#firstrun" class="sub">2a. The command &amp; flags</a>
+  <a href="#config" class="sub">2b. The config file</a>
+  <a href="#workload" class="sub">2c. The workload file</a>
+  <a href="#output" class="sub">2d. Reading the output</a>
+  <a href="#layers">3. Under the hood: the layers</a>
+  <a href="#tiers">4. The memory tiers</a>
+  <a href="#rack">5. Scaling to a rack (Vera Rubin)</a>
+  <a href="#prefix">6. Prefix caching &amp; eviction</a>
+  <a href="#pod">7. Scaling to the pod (144 GPUs)</a>
+  <a href="#fidelity">8. Fidelity: MEM_LOAD vs COMP</a>
+  <a href="#ref">9. Reference</a>
+</nav>
+
+<main>
+  <h1>Introducing LLMServingSim</h1>
+  <p class="subtitle">A hands-on tour of our tiered-memory LLM-serving simulator. We start by running a
+  small example and reading its output, then peel back the layers, then scale up toward a real Vera
+  Rubin pod — easing into the memory-tier work we added.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="overview">1. Overview — the two brains</h2>
+  <p class="lead">LLMServingSim answers "what if?" questions about serving giant models on hardware we
+  may not have on the bench — new memory tiers, bigger racks, different caching — and returns
+  throughput and latency <em>without</em> the real cluster.</p>
+  <p>It has <b>two brains</b>. The <b>Python layer</b> (a vLLM-style serving frontend) decides
+  <b>WHAT happens</b> — which requests batch together, where each request's KV cache lives, what to
+  reuse. <b>ASTRA-Sim</b> (a C++ analytical backend) computes <b>HOW LONG</b> it takes — compute,
+  network, and memory-access time. They talk through a simple per-batch <b>text trace</b>.</p>
+
+  <figure>
+  <svg viewBox="0 0 860 250" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">
+    <rect x="10" y="30" width="360" height="150" rx="10" fill="#eaf3ff" stroke="#0969da"/>
+    <text x="190" y="52" text-anchor="middle" font-weight="700" fill="#0969da">PYTHON  —  "what happens"</text>
+    <rect x="28" y="66" width="150" height="40" rx="6" fill="#fff" stroke="#0969da"/><text x="103" y="90" text-anchor="middle">Router</text>
+    <rect x="28" y="120" width="150" height="46" rx="6" fill="#fff" stroke="#0969da"/>
+    <text x="103" y="140" text-anchor="middle">Scheduler</text><text x="103" y="156" text-anchor="middle" font-size="11" fill="#57606a">batch + KV placement</text>
+    <rect x="200" y="93" width="150" height="46" rx="6" fill="#fff" stroke="#0969da"/>
+    <text x="275" y="113" text-anchor="middle">MemoryModel</text><text x="275" y="129" text-anchor="middle" font-size="11" fill="#57606a">tiers + prefix cache</text>
+    <rect x="392" y="80" width="90" height="90" rx="8" fill="#fff8c5" stroke="#9a6700"/>
+    <text x="437" y="120" text-anchor="middle" font-size="12">text</text><text x="437" y="136" text-anchor="middle" font-size="12">trace</text>
+    <rect x="500" y="30" width="350" height="150" rx="10" fill="#eafaef" stroke="#1a7f37"/>
+    <text x="675" y="52" text-anchor="middle" font-weight="700" fill="#1a7f37">ASTRA-Sim  —  "how long"</text>
+    <rect x="520" y="70" width="310" height="44" rx="6" fill="#fff" stroke="#1a7f37"/>
+    <text x="675" y="90" text-anchor="middle">compute + collective-comm timing</text><text x="675" y="106" text-anchor="middle" font-size="11" fill="#57606a">per-NPU Chakra graph</text>
+    <rect x="520" y="122" width="310" height="44" rx="6" fill="#fff" stroke="#1a7f37"/>
+    <text x="675" y="142" text-anchor="middle">analytical memory model (tiers)</text><text x="675" y="158" text-anchor="middle" font-size="11" fill="#57606a">contention on shared pools</text>
+    <defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#57606a"/></marker></defs>
+    <line x1="352" y1="125" x2="390" y2="125" stroke="#57606a" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="484" y1="125" x2="516" y2="125" stroke="#57606a" stroke-width="1.6" marker-end="url(#a)"/>
+    <path d="M675,182 C675,215 190,215 190,182" fill="none" stroke="#57606a" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#a)"/>
+    <text x="437" y="233" text-anchor="middle" font-size="12" fill="#57606a">timing (cycles) returned → scheduler advances the clock, loops</text>
+  </svg>
+  <figcaption>Diagram 1 — the loop. Python schedules &amp; caches → emits a trace → ASTRA-Sim times it →
+  the cycle count comes back → repeat until every request finishes.</figcaption>
+  </figure>
+
+  <h3>Where this is headed</h3>
+  <p>A preview of the payoff. Below is the throughput advantage of having a fast pooled tier
+  (<b>JBOF</b>) versus falling back to network storage, measured at four scales in this guide:</p>
+  <figure>
+  <svg viewBox="0 0 720 235" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12">
+    <line x1="80" y1="30" x2="80" y2="190" stroke="#d0d7de"/>
+    <line x1="80" y1="190" x2="670" y2="190" stroke="#d0d7de"/>
+    <line x1="80" y1="121" x2="670" y2="121" stroke="#eaeef2"/>
+    <text x="72" y="194" text-anchor="end" font-size="10" fill="#57606a">0</text>
+    <text x="72" y="125" text-anchor="end" font-size="10" fill="#57606a">3×</text>
+    <text x="72" y="34" text-anchor="end" font-size="10" fill="#57606a">7×</text>
+    <rect x="120" y="159" width="80" height="31"  rx="3" fill="#1a7f37" opacity="0.65"/>
+    <rect x="260" y="137" width="80" height="53"  rx="3" fill="#1a7f37" opacity="0.65"/>
+    <rect x="400" y="42"  width="80" height="148" rx="3" fill="#bc4c00"/>
+    <rect x="540" y="47"  width="80" height="143" rx="3" fill="#bc4c00"/>
+    <text x="160" y="152" text-anchor="middle" font-weight="700" fill="#1a7f37">1.4×</text>
+    <text x="300" y="130" text-anchor="middle" font-weight="700" fill="#1a7f37">2.3×</text>
+    <text x="440" y="35"  text-anchor="middle" font-weight="700" fill="#bc4c00">6.5×</text>
+    <text x="580" y="40"  text-anchor="middle" font-weight="700" fill="#bc4c00">6.3×</text>
+    <text x="160" y="205" text-anchor="middle" font-size="11">1 GPU</text>
+    <text x="300" y="205" text-anchor="middle" font-size="11">8 GPU</text>
+    <text x="440" y="205" text-anchor="middle" font-size="11">72 GPU · rack</text>
+    <text x="580" y="205" text-anchor="middle" font-size="11">144 GPU · pod</text>
+    <text x="375" y="227" text-anchor="middle" font-size="12" fill="#57606a">JBOF vs no-JBOF throughput advantage (higher = JBOF wins by more)</text>
+  </svg>
+  <figcaption>Small on one GPU, the advantage <b>jumps once a full rack shares one deep pool</b>
+  (contention) and holds at pod scale. We build up to it run by run — §2 (1→8 GPU), §5 (rack), §7 (pod).</figcaption>
+  </figure>
+  <p>The rest of this guide is best read top to bottom: we <b>run something first</b> (§2), then explain
+  the machinery (§3–4), then scale up (§5, §7) toward the memory-tier feature we added.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="firstrun">2. Your first runs — from 1 GPU to 8</h2>
+  <p>We ease in on a single GPU to watch the tiers work, then do a full 8-GPU run and read every part of
+  its output.</p>
+
+  <h3>The gentlest start — one GPU</h3>
+  <p>The simplest possible run: 1 GPU, the mini model, 120 distinct contexts that are then reused. As
+  each context is computed it fills the NPU, spills to CPU, and lands in the deep tier; when it is reused,
+  it is served straight back from wherever it survived:</p>
+  <pre class="code">Tier       Hit tokens    Hit %  Reload(ms)   Usage(MB)   Cap(GB)   % used
+NPU                 0    0.00%        0.00      320.00      0.32  98.301%
+CPU                 0    0.00%        0.00      608.00      0.85  69.853%
+JBOF           245760   49.90%      104.41     3866.25     18.80  20.083%
+COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
+  <span class="cap">1 GPU, WITH JBOF — the NPU is full, so the reused KV comes back from JBOF</span>
+  <p>With JBOF that reused KV returns in <b>104 ms</b> → <b>73.6 req/s</b>. Run the same workload on a
+  config with no JBOF tier and the reuse falls to COLDSTORE: <b>1,289 ms</b> → <b>54.0 req/s</b>. The
+  reload is <b>~12× slower</b>; at this tiny scale that is only ~1.4× throughput — but that advantage
+  grows sharply as we scale out (the chart in §1, and §7). Everything below is this same mechanism,
+  measured properly.</p>
+
+  <h3>Now scale to 8 GPUs</h3>
+  <p>The smallest example that exercises everything <em>across instances</em>: <b>8 GPUs</b>, the same
+  model, and a workload that reuses prefixes so the tiers get used — the run we'll read in detail.</p>
+
+  <h3><span class="step">2a</span>The command &amp; the flags</h3>
+  <pre class="code">docker exec servingsim_docker bash -lc "cd /app/LLMServingSim &amp;&amp; \
+  python -m serving \
+    --cluster-config configs/cluster/pod_prop_mini_8gpu_jbof.json \  <span class="cm"># the hardware</span>
+    --dataset workloads/pod_prop_8gpu.jsonl \                        <span class="cm"># the requests</span>
+    --dtype float16 --block-size 16 \
+    --enable-prefix-caching --enable-prefix-sharing \                <span class="cm"># reuse KV across requests</span>
+    --prefix-storage COLDSTORE \                                     <span class="cm"># full spill chain; reuse is served from the shallowest tier holding it</span>
+    --max-num-seqs 8 \                                               <span class="cm"># batch width per GPU</span>
+    --output outputs/pod_prop_8gpu_jbof.csv"</pre>
+  <table>
+    <tr><th>Flag</th><th>What it does (and the knob it controls)</th></tr>
+    <tr><td class="num">--cluster-config</td><td>The hardware: how many nodes/GPUs, and each memory tier's size/bandwidth/latency. See §2b.</td></tr>
+    <tr><td class="num">--dataset</td><td>The workload: a JSONL of requests (prompt + output lengths + token ids). See §2c.</td></tr>
+    <tr><td class="num">--dtype</td><td>Weight/activation precision (<code>float16</code> here). Must match a profiled perf table.</td></tr>
+    <tr><td class="num">--block-size</td><td>KV-cache block granularity in tokens (16). Prefix matching is block-aligned.</td></tr>
+    <tr><td class="num">--enable-prefix-caching</td><td>Reuse a previously-computed prompt prefix's KV instead of recomputing it.</td></tr>
+    <tr><td class="num">--enable-prefix-sharing</td><td>Let the deep tiers (CPU/FLASH/JBOF/COLDSTORE) be shared across instances — required to use them.</td></tr>
+    <tr><td class="num">--prefix-storage</td><td>Deepest tier a reused prefix may live in: the chain is NPU→CPU→FLASH→JBOF→COLDSTORE; the named tier and everything shallower are active, deeper is unused.</td></tr>
+    <tr><td class="num">--max-num-seqs</td><td>Max concurrent sequences batched per GPU (8). Caps in-flight KV so the NPU isn't over-committed.</td></tr>
+    <tr><td class="num">--output</td><td>Per-request CSV (arrival, TTFT, TPOT, ITL, latency…) — the raw data behind the summary table.</td></tr>
+  </table>
+  <p>Two more you'll see: <code>--enable-chunked-prefill</code> (on by default — splits a long prompt
+  across steps) and <code>--max-num-batched-tokens</code> (the per-step token budget).</p>
+
+  <h3><span class="step">2b</span>The input config file</h3>
+  <p>The cluster config is a JSON tree: <code>nodes</code> (racks) → each node's shared memory tiers →
+  a list of <code>instances</code> (GPUs), each with its own NPU. Here is the 8-GPU file (one node,
+  8 GPUs), trimmed to one instance:</p>
+  <pre class="code">{
+  "num_nodes": 1,                    <span class="cm"># 1 rack</span>
+  "link_bw": 100, "link_latency": 2000,             <span class="cm"># inter-node network (GB/s, ns)</span>
+  "nodes": [{
+    "num_instances": 8,              <span class="cm"># 8 GPUs in this rack</span>
+    "cpu_mem":       { "mem_size": 6.8,   "mem_bw": 1000, "mem_latency": 120 },                          <span class="cm"># per-RACK</span>
+    "jbof_mem":      { "mem_size": 150.4, "mem_bw": 64, "mem_latency": 80000,  "link_bw": 100, "link_latency": 2000 },   <span class="cm"># pooled</span>
+    "coldstore_mem": { "mem_size": 1504,  "mem_bw": 4,  "mem_latency": 2000000,"link_bw": 16,  "link_latency": 20000 },  <span class="cm"># pooled</span>
+    "instances": [
+      { "model_name": "meta-llama/Llama-3.1-8B-mini4L", "hardware": "RTXPRO6000",
+        "npu_mem": { "mem_size": 3.9, "mem_bw": 22000, "mem_latency": 10 },   <span class="cm"># per-GPU HBM</span>
+        "tp_size": 1, "pd_type": null },
+      <span class="cm">... 7 more identical GPUs ...</span>
+    ]
+  }]
+}</pre>
+  <span class="cap">configs/cluster/pod_prop_mini_8gpu_jbof.json — generated by make_pod_prop_mini_config.py</span>
+  <p>Every tier block carries the same <b>knobs</b> — this is the heart of the tier feature:</p>
+  <table>
+    <tr><th>Knob</th><th>Unit</th><th>Meaning</th></tr>
+    <tr><td class="num">mem_size</td><td>GiB</td><td>Capacity of the tier.</td></tr>
+    <tr><td class="num">mem_bw</td><td>GB/s</td><td>The media's bandwidth (HBM 22 000, LPDDR 1 000, flash 64, disk 4).</td></tr>
+    <tr><td class="num">mem_latency</td><td>ns</td><td>The media's access latency (HBM ~10, LPDDR ~120, flash ~80 000, disk ~2 000 000).</td></tr>
+    <tr><td class="num">link_bw / link_latency</td><td>GB/s / ns</td><td>The <b>network hop</b> to reach a pooled tier — present only for JBOF &amp; COLDSTORE (they sit behind a BlueField/RDMA fabric).</td></tr>
+  </table>
+  <p><b>Scope:</b> <span class="pill tag-npu">NPU</span> is per-GPU; <span class="pill tag-cpu">CPU</span>
+  and <span class="pill tag-flash">FLASH</span> are per-rack; <span class="pill tag-jbof">JBOF</span> and
+  <span class="pill tag-cold">COLDSTORE</span> are one pool shared across the whole pod. (These specific
+  numbers are a proportionally-scaled Vera Rubin — see §5.)</p>
+
+  <h3><span class="step">2c</span>The input workload file</h3>
+  <p>The dataset is one JSON object per request:</p>
+  <pre class="code">{"input_toks": 2048, "output_toks": 4, "arrival_time_ns": 0,
+ "input_tok_ids": [1, 2, 3, ... 2048], "output_tok_ids": [500000000, ...]}</pre>
+  <span class="cap">one line of workloads/pod_prop_8gpu.jsonl</span>
+  <table>
+    <tr><th>Field</th><th>Meaning</th></tr>
+    <tr><td class="num">input_toks / output_toks</td><td>Prompt length and number of tokens to generate.</td></tr>
+    <tr><td class="num">arrival_time_ns</td><td>When the request arrives (simulation clock). 0 = part of the opening burst.</td></tr>
+    <tr><td class="num">input_tok_ids / output_tok_ids</td><td>The actual token ids. <b>These decide prefix reuse</b>: two requests that share a leading id sequence share cached KV.</td></tr>
+  </table>
+  <p>Our generator (<code>make_rack_fill.py</code>) builds the workload in <b>two phases</b>, which is
+  exactly how we force the tiers to fill and then get reused:</p>
+  <ul>
+    <li><b>Phase 1 — fill:</b> <code>N</code> <em>distinct</em> long contexts (unique token ids). Computing
+    them fills NPU, then spills to CPU, then to the deep pool — every context's KV lands somewhere.</li>
+    <li><b>Phase 2 — reuse:</b> re-send each context (oldest first) plus a short new tail. By now the old
+    context has been evicted from NPU/CPU but survives in the deep tier, so each reuse <b>reloads</b> it
+    from JBOF (or, without JBOF, from the far slower COLDSTORE).</li>
+  </ul>
+
+  <h3><span class="step">2d</span>Reading the output</h3>
+  <p>The run prints three blocks. First, <b>throughput</b>:</p>
+  <pre class="code">Total latency (s):                    3.401
+Request throughput (req/s):         264.66</pre>
+  <p>Then a <b>per-tier prefix-cache table</b> — where the reused KV was found and what it cost:</p>
+  <pre class="code">Tier       Hit tokens    Hit %  Reload(ms)   Usage(MB)   Cap(GB)   % used
+NPU                 0    0.00%        0.00     2560.00      2.54  98.301%
+CPU                 0    0.00%        0.00     6688.00      6.80  96.048%
+JBOF           921600   49.90%      391.68    14498.44    150.40   9.414%
+COLDSTORE           0    0.00%        0.00    14498.44   1504.00   0.941%
+Total prefix hit ratio (%):                   49.90</pre>
+  <span class="cap">8-GPU, WITH JBOF — real output</span>
+  <table>
+    <tr><th>Column</th><th>Meaning</th></tr>
+    <tr><td>Hit tokens / Hit %</td><td>How many reused tokens were served from that tier (here all 49.9% of reuse comes from JBOF — NPU/CPU are full and already evicted it).</td></tr>
+    <tr><td>Reload(ms)</td><td>Total time reloading those hits from the tier. NPU hits are free; JBOF cost 392 ms.</td></tr>
+    <tr><td>Usage / Cap / % used</td><td>How full the tier is — NPU 98%, CPU 96% are saturated, so reuse had to spill down to JBOF.</td></tr>
+  </table>
+  <p>Third — and the metric that matters most for us — the <b>cluster-wide Latency Summary</b>, pooled
+  across all 8 GPUs (not one block per GPU):</p>
+  <pre class="code">──────── Latency Summary (cluster-wide) ────────
+Finished requests: 900    Instances: 8
+Metric                  mean       p50       p90       p99       max    (ms)
+TTFT                  341.12    288.67    749.68    914.10    927.22
+TBT (per-token)         8.90      2.22     16.33     16.34     16.34
+E2E latency           367.82    305.00    798.57    923.97    933.52</pre>
+  <span class="cap">serving/__main__.py — pooled TTFT/TBT/E2E, mean + percentiles</span>
+  <div class="box insight">
+    <div class="t">The three metrics to watch</div>
+    <ul style="margin:6px 0">
+      <li><b>TTFT</b> (time-to-first-token) — dominated by prefill + any prefix <em>reload</em>. This is
+      where a fast tier shows up: reuse served from JBOF keeps TTFT low.</li>
+      <li><b>TBT</b> (time-between-tokens, a.k.a. TPOT) — the decode/streaming rate. Prefix caching
+      touches prefill, so TBT is the <em>control</em> — it should barely move.</li>
+      <li><b>E2E</b> — total per-request latency.</li>
+    </ul>
+    We report <b>mean and p50/p90/p99/max</b> because the tail is where a slow reload bites. Percentiles
+    are pooled over every request on every instance, so it reads the same at 8 GPUs or 1,152.
+  </div>
+
+  <h3>Same run, without JBOF</h3>
+  <p>Now swap in the config that omits <code>jbof_mem</code> (same flags) — the identical reuse must
+  come from network storage instead:</p>
+  <table>
+    <tr><th>8 GPUs, 450 contexts</th><th>WITH JBOF</th><th>WITHOUT (COLDSTORE)</th></tr>
+    <tr><td>Reload of the reused KV</td><td class="num">392 ms</td><td class="num">4,836 ms</td></tr>
+    <tr><td>Throughput</td><td class="num"><b>264.7 req/s</b></td><td class="num">114.7 req/s</td></tr>
+    <tr><td>TTFT mean / p99</td><td class="num"><b>341 / 914 ms</b></td><td class="num">1,471 / 4,815 ms</td></tr>
+    <tr><td>TBT mean</td><td class="num">8.9 ms</td><td class="num">8.9 ms (identical)</td></tr>
+  </table>
+  <p>Same work, same 49.9% reuse — the only difference is <em>which tier serves it</em>: <b>2.3×
+  throughput, ~5× lower TTFT tail</b>, and TBT untouched. That is the whole point of the tier feature,
+  and everything below explains how it works and how it behaves at scale.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="layers">3. Under the hood — the three layers</h2>
+  <p>That run flowed through three layers. Now that you've seen the output, here's what produced it.</p>
+
+  <h3>Layer 1 — the Python frontend (<code>serving/</code>)</h3>
+  <p>A vLLM-style control plane. Each loop iteration: <b>route</b> new requests to instances →
+  <b>schedule</b> a batch (which requests, how many tokens each, and where their KV lives) →
+  <b>generate a trace</b> → <b>convert</b> it → <b>time it</b> with ASTRA-Sim → <b>account</b> the
+  result and retire finished requests.</p>
+  <details><summary>Deep dive: the scheduler's decisions</summary><div class="inner">
+    <pre class="code"><span class="cm"># serving/core/scheduler.py — schedule_base()</span>
+<span class="cm"># 1. chunked prefill: hand out a per-step token budget</span>
+<span class="cm"># 2. size the KV the batch needs  -&gt; memory.get_block_kv(...)</span>
+<span class="cm"># 3. if it won't fit on the NPU, evict decode reqs to CPU, retry</span>
+<span class="cm"># 4. memory.allocate(kv_size, Device.NPU)</span>
+<span class="cm"># 5. build Batch: token lists + tier_loads=[(tier, reload_bytes, device_id), ...]</span></pre>
+    <p><code>tier_loads</code> is how "this prompt's prefix is in JBOF" becomes a real, timed memory
+    load in the trace. <code>serving/core/memory_model.py</code> owns the per-tier caches and KV
+    accounting.</p>
+  </div></details>
+
+  <h3>Layer 2 — the intermediate trace</h3>
+  <p>One human-readable text file per batch: each row is a layer of work with 11 fixed-width columns
+  (compute time + where its input/weight/output tensors live). The <b>loc</b> columns
+  (LOCAL/REMOTE/CXL/FLASH/JBOF/COLDSTORE) are what turn a plain compute layer into a timed memory
+  access.</p>
+  <figure>
+  <svg viewBox="0 0 860 120" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
+    <rect x="10" y="20" width="120" height="34" fill="#eaf3ff" stroke="#0969da"/><text x="70" y="41" text-anchor="middle">qkv_proj_2</text>
+    <rect x="130" y="20" width="80" height="34" fill="#eafaef" stroke="#1a7f37"/><text x="170" y="41" text-anchor="middle">36203</text>
+    <rect x="210" y="20" width="180" height="34" fill="#f3eafd" stroke="#8250df"/><text x="300" y="41" text-anchor="middle">JBOF:0  27493990</text>
+    <rect x="390" y="20" width="150" height="34" fill="#fdeee6" stroke="#bc4c00"/><text x="465" y="41" text-anchor="middle">LOCAL 442368</text>
+    <text x="70" y="72" text-anchor="middle" font-size="10" fill="#0969da">layer name</text>
+    <text x="170" y="72" text-anchor="middle" font-size="10" fill="#1a7f37">comp_time ns</text>
+    <text x="300" y="72" text-anchor="middle" font-size="10" fill="#8250df">weight loc:dev + bytes</text>
+    <text x="465" y="72" text-anchor="middle" font-size="10" fill="#bc4c00">output loc + bytes</text>
+    <text x="300" y="92" text-anchor="middle" font-size="10" fill="#8250df">← a non-LOCAL loc here becomes a timed MEM_LOAD</text>
+  </svg>
+  <figcaption>Diagram 2 — a trace row. A reload from a deep tier is emitted as a middle row whose
+  weight column points at <code>JBOF:0</code>.</figcaption>
+  </figure>
+  <details><summary>Deep dive: the format &amp; the Chakra handoff</summary><div class="inner">
+    <pre class="code">COLOCATED        model_parallel_NPU_group: 1
+Layername       comp_time  input_loc  input_size  weight_loc  weight_size  output_loc ...
+embedding_0     2912       REMOTE:1   144         LOCAL       1050673152   LOCAL ...
+qkv_proj_2      36203      LOCAL      294912      LOCAL       50331648     LOCAL ...
+jbof_load       1          LOCAL      0           JBOF:0      27493990     LOCAL ...   <span class="cm"># a reload</span></pre>
+    <span class="cap">serving/core/utils.py (header/formatter) ; trace_generator.py:1533–1550 (deep-tier row)</span>
+    <p>The converter <code>llm_converter.py</code> turns any row whose <code>weight_loc</code> is not
+    LOCAL (with <code>weight_size&gt;0</code>) into a <code>MEM_LOAD</code> node on the request's critical
+    path. Location strings map to an enum: <code>LOCAL=1 REMOTE=2 CXL=3 STORAGE=4 FLASH=5 JBOF=6
+    COLDSTORE=7</code>.</p>
+  </div></details>
+
+  <h3>Layer 3 — ASTRA-Sim (the timing backend)</h3>
+  <p>A C++ <b>analytical</b> simulator. Given the per-NPU graph plus a description of the hardware, it
+  computes the batch's time — including collective communication and <b>memory-access contention</b> on
+  shared pools. <code>config_builder.py</code> writes it four inputs per run into
+  <code>astra-sim/inputs/runs/&lt;id&gt;/</code>:</p>
+  <table>
+    <tr><th>File</th><th>Controls</th></tr>
+    <tr><td class="num">workload/…/llm.N.et</td><td>The per-NPU Chakra graph (compute + memory + comm).</td></tr>
+    <tr><td class="num">system/system.json</td><td>Collective algorithms, local bandwidth.</td></tr>
+    <tr><td class="num">network/network.yml</td><td>Topology, NPU counts, link bandwidth &amp; latency.</td></tr>
+    <tr><td class="num">memory/memory_expansion.json</td><td><b>Our tiers</b> — bandwidth, latency, pooling of CPU/JBOF/COLDSTORE.</td></tr>
+  </table>
+  <p>It prints one line per finished batch — <code>sys[N] iteration M finished, X cycles …</code> —
+  parsed back into the batch's duration (<code>controller.py</code>), which advances the clock. At the
+  end, the Python layer prints the summary you read in §2d.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="tiers">4. The memory tiers — what we added</h2>
+  <p>A big model's KV cache does not fit in GPU memory for many long, concurrent conversations. Our
+  extension adds a <b>hierarchy of KV-cache tiers</b> below the NPU; when one fills, older entries spill
+  to the next, larger-but-slower one:</p>
+  <figure>
+  <svg viewBox="0 0 820 280" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">
+    <defs><marker id="d" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#57606a"/></marker></defs>
+    <rect x="20" y="20" width="150" height="38" rx="6" fill="#1a7f37"/><text x="95" y="44" text-anchor="middle" fill="#fff" font-weight="700">NPU (HBM)</text>
+    <rect x="20" y="66" width="200" height="38" rx="6" fill="#0969da"/><text x="120" y="90" text-anchor="middle" fill="#fff" font-weight="700">CPU (LPDDR5X)</text>
+    <rect x="20" y="112" width="250" height="38" rx="6" fill="#8250df"/><text x="145" y="136" text-anchor="middle" fill="#fff" font-weight="700">FLASH (local SSD)</text>
+    <rect x="20" y="158" width="330" height="38" rx="6" fill="#bc4c00"/><text x="185" y="182" text-anchor="middle" fill="#fff" font-weight="700">JBOF (pooled flash)</text>
+    <rect x="20" y="204" width="430" height="38" rx="6" fill="#6e7781"/><text x="235" y="228" text-anchor="middle" fill="#fff" font-weight="700">COLDSTORE (network)</text>
+    <line x1="480" y1="30" x2="480" y2="238" stroke="#57606a" stroke-width="1.4" marker-end="url(#d)"/>
+    <text x="512" y="35" font-size="12" fill="#57606a">smaller · faster</text>
+    <text x="512" y="236" font-size="12" fill="#57606a">bigger · slower</text>
+    <text x="560" y="44"  font-size="12" fill="#1a7f37">288 GB · 22 TB/s</text>
+    <text x="560" y="90"  font-size="12" fill="#0969da">~750 GB/GPU · 1.2 TB/s</text>
+    <text x="560" y="136" font-size="12" fill="#8250df">local SSD</text>
+    <text x="560" y="182" font-size="12" fill="#bc4c00">16 TB/GPU · ~64 GB/s</text>
+    <text x="560" y="228" font-size="12" fill="#6e7781">network · ~ms</text>
+  </svg>
+  <figcaption>Diagram 3 — the tier ladder (widths ≈ capacity) and its Vera Rubin mapping. JBOF is the
+  vendor-neutral name for the pooled-flash tier. CXL is a separate optional second tier, not in this chain.</figcaption>
+  </figure>
+  <p>A reload's latency is the media access plus (for pooled tiers) the network hop:</p>
+  <pre class="code">reload_ns = mem_latency + bytes/mem_bw            <span class="cm"># CPU, FLASH (local)</span>
+          + link_latency + bytes/link_bw           <span class="cm"># + JBOF, COLDSTORE (over the BlueField/RDMA fabric)</span></pre>
+  <span class="cap">serving/core/memory_model.py — tier_load_latency_ns()</span>
+  <p>The NPU's usable KV space is <code>mem_size − model_weight</code>; a heavier model both takes more
+  NPU room and costs more KV per token — which is why our examples use a small model (see §5).</p>
+
+  <!-- ============================================================ -->
+  <h2 id="rack">5. Scaling to a rack — hitting Vera Rubin</h2>
+  <p>Our target is a <b>Vera Rubin NVL72</b> rack: <b>72 GPUs</b> sharing a memory hierarchy. The whole
+  point of the tier work is to study that hardware, so the numbers in our configs are chosen to be
+  <b>faithful</b> to it.</p>
+
+  <h3>The real Vera Rubin memory hierarchy (per GPU)</h3>
+  <table>
+    <tr><th>Tier</th><th>Real capacity</th><th>Real bandwidth</th><th>Real latency</th></tr>
+    <tr><td><span class="pill tag-npu">NPU</span> Rubin HBM4</td><td class="num">288 GB</td><td class="num">22 TB/s</td><td class="num">~10 ns</td></tr>
+    <tr><td><span class="pill tag-cpu">CPU</span> Vera LPDDR5X</td><td class="num">~750 GB</td><td class="num">~1.2 TB/s</td><td class="num">~120 ns</td></tr>
+    <tr><td><span class="pill tag-jbof">JBOF</span> pooled flash</td><td class="num">16 TB</td><td class="num">~64 GB/s</td><td class="num">~80 µs<br>+ BlueField 100 GB/s / ~2 µs</td></tr>
+    <tr><td><span class="pill tag-cold">COLDSTORE</span> network</td><td class="num">large</td><td class="num">~4 GB/s</td><td class="num">~2 ms</td></tr>
+  </table>
+
+  <h3>How we simulate it faithfully</h3>
+  <p>We cannot fill 288 GB of HBM or 16 TB of flash per GPU with any tractable workload. So the recipe is:</p>
+  <div class="box insight">
+    <div class="t">Faithfulness recipe</div>
+    <ol style="margin:6px 0">
+      <li><b>Keep bandwidth &amp; latency at the REAL values</b> — a tier's <em>speed</em> is physical, so
+      <code>mem_bw</code>/<code>mem_latency</code>/<code>link_*</code> are the real Vera Rubin numbers
+      (HBM 22 000 GB/s @ 10 ns, LPDDR 1 000 @ 120 ns, flash 64 @ 80 µs behind 100 GB/s / 2 µs, disk 4 @ 2 ms).</li>
+      <li><b>Scale only the CAPACITIES</b>, by one common factor, so the real inter-tier ratios are
+      preserved (NPU-KV : CPU : JBOF ≈ 1 : 2.7 : 58) and a feasible workload still overflows each tier
+      naturally.</li>
+      <li><b>Use a small model</b> (<code>Llama-3.1-8B-mini4L</code>, 4 layers) so the scaled-down NPU
+      still keeps a healthy KV headroom over the weights.</li>
+    </ol>
+  </div>
+  <table>
+    <tr><th>Per GPU</th><th>Real</th><th>Our sim (bw &amp; latency real, capacity scaled)</th></tr>
+    <tr><td>NPU</td><td class="num">288 GB</td><td class="num">3.9 GiB @ 22 000 GB/s, 10 ns</td></tr>
+    <tr><td>CPU</td><td class="num">750 GB</td><td class="num">0.85 GiB @ 1 000 GB/s, 120 ns</td></tr>
+    <tr><td>JBOF</td><td class="num">16 TB</td><td class="num">18.8 GiB @ 64 GB/s, 80 µs, link 100 GB/s / 2 µs</td></tr>
+    <tr><td>COLDSTORE</td><td class="num">—</td><td class="num">188 GiB @ 4 GB/s, 2 ms, link 16 GB/s / 20 µs</td></tr>
+  </table>
+  <p>So a run on 72 of these GPUs <em>is</em> a Vera Rubin rack, with real per-tier timing — only the
+  absolute capacities (and the model) are shrunk to fit a simulation.</p>
+
+  <h3>The rack run (72 GPUs)</h3>
+  <p>Scaling the §2 example to 72 GPUs (one full rack) with a larger workload so NPU + the per-rack CPU
+  saturate and the reuse spills into the shared JBOF:</p>
+  <table>
+    <tr><th>72 GPUs (one rack), 3,200 contexts</th><th>WITH JBOF</th><th>WITHOUT (COLDSTORE)</th></tr>
+    <tr><td>Fill</td><td class="num">NPU 98.3%, CPU 99.8%</td><td class="num">NPU 98.3%, CPU 99.8% (same)</td></tr>
+    <tr><td>Reuse served from</td><td><span class="pill tag-jbof">JBOF</span> (6.55M tok, 49.9%)</td><td><span class="pill tag-cold">COLDSTORE</span> (6.55M tok, 49.9%)</td></tr>
+    <tr><td>Deep-tier reload</td><td class="num">2,787 ms</td><td class="num">34,427 ms</td></tr>
+    <tr><td>Throughput</td><td class="num"><b>1,104 req/s</b></td><td class="num">171 req/s</td></tr>
+    <tr><td>Total latency</td><td class="num">5.80 s</td><td class="num">37.44 s</td></tr>
+  </table>
+  <table>
+    <tr><th>72 GPU, per-request</th><th>WITH JBOF</th><th>WITHOUT</th><th>ratio</th></tr>
+    <tr><td>TTFT mean</td><td class="num">1,221 ms</td><td class="num">9,137 ms</td><td class="num">7.5×</td></tr>
+    <tr><td>TTFT p90</td><td class="num">2,232 ms</td><td class="num">27,502 ms</td><td class="num">12.3×</td></tr>
+    <tr><td>TTFT p99</td><td class="num">2,736 ms</td><td class="num">33,752 ms</td><td class="num">12.3×</td></tr>
+    <tr><td>TBT (per-token) mean</td><td class="num">21.2 ms</td><td class="num">21.2 ms</td><td class="num">1.0× (unchanged)</td></tr>
+  </table>
+  <div class="box insight">
+    <div class="t">The rack already shows the tail blow-up</div>
+    A full rack shares one deep pool, so without JBOF all 72 GPUs' reloads queue on COLDSTORE — reload
+    balloons to 34 s and <b>TTFT p99 reaches ~34 s</b> (vs 2.7 s with JBOF, a 12.3× tail gap), dragging
+    throughput to 171 vs 1,104 req/s (6.5×). With JBOF, TTFT stays ~1.2 s mean; TBT is identical in both.
+    This is the headline argument for the pooled fast tier, on faithful Vera-Rubin-rate hardware.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="prefix">6. Prefix caching &amp; eviction</h2>
+  <p>Requests often share a prefix (a system prompt, a document, few-shot examples). Prefix caching
+  reuses that prefix's KV instead of recomputing it; the tiers keep reuse possible even after the prefix
+  is pushed out of GPU memory.</p>
+  <p>Each tier owns a <b>RadixCache</b> — a tree keyed by token blocks. A new request is matched against
+  it to find the <b>longest cached prefix</b>, searching the shallowest tier first.</p>
+  <figure>
+  <svg viewBox="0 0 700 180" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12">
+    <circle cx="70" cy="90" r="18" fill="#eaeef2" stroke="#57606a"/><text x="70" y="94" text-anchor="middle">root</text>
+    <line x1="88" y1="90" x2="150" y2="90" stroke="#57606a"/>
+    <rect x="150" y="72" width="150" height="36" rx="6" fill="#eafaef" stroke="#1a7f37"/><text x="225" y="95" text-anchor="middle">"You are a helpful…"</text>
+    <line x1="300" y1="90" x2="350" y2="60" stroke="#57606a"/><line x1="300" y1="90" x2="350" y2="120" stroke="#57606a"/>
+    <rect x="350" y="42" width="150" height="36" rx="6" fill="#eaf3ff" stroke="#0969da"/><text x="425" y="65" text-anchor="middle">"…summarize: docA"</text>
+    <rect x="350" y="112" width="150" height="36" rx="6" fill="#fff8c5" stroke="#9a6700"/><text x="425" y="135" text-anchor="middle">"…translate: docB"</text>
+    <text x="350" y="168" font-size="12" fill="#57606a">a new "You are a helpful… docC" reuses the green node; only "docC" is new work.</text>
+  </svg>
+  <figcaption>Diagram 4 — the radix (prefix) tree; shared prefixes share nodes.</figcaption>
+  </figure>
+  <p>When cached, a prefix is written <b>inclusively</b> — into CPU and, by write-through, every deeper
+  tier. So one prefix can live in NPU, CPU and JBOF at once; as shallow tiers fill and evict, the deeper
+  copy survives, and a later reuse is served from the shallowest tier that still holds it.</p>
+
+  <h3>The eviction rule</h3>
+  <p>When a tier is full it evicts the <b>least-recently-used</b> entries — but only <b>unlocked</b>
+  ones. An entry is <em>locked</em> (a <code>lock_ref</code> counter) while an in-flight request is
+  using it, so it can't be evicted out from under a running batch.</p>
+  <div class="box gotcha">
+    <div class="t">The admission-safety fix</div>
+    Reaching a deep tier means the NPU is constantly full and churning. The original code would try to
+    cache a freshly-computed block into a full NPU and <b>crash</b>. The fix: before that allocation, if
+    it would overflow, first evict unlocked LRU entries (they live on in deeper tiers) instead of
+    crashing. It is a <b>no-op when the NPU has room</b>, verified bit-identical against an earlier study.
+  </div>
+  <details><summary>Deep dive: the eviction &amp; admission code</summary><div class="inner">
+    <pre class="code"><span class="cm"># RadixCache.evict — LRU order, skip locked</span>
+while num_evicted &lt; num_tokens and leaves:
+    x = heapq.heappop(leaves)          <span class="cm"># ordered by last_access_time</span>
+    if x.lock_ref &gt; 0: continue        <span class="cm"># locked -&gt; cannot evict</span>
+    num_evicted += len(x.key); self._delete_leaf(x)</pre>
+    <pre class="code"><span class="cm"># apply_kv_cache_events — make room instead of crashing</span>
+deficit = (self.npu_used + npu_byte_alloc) - self.npu_mem
+if deficit &gt; 0:
+    self.evict_prefix_cache(deficit, Device.NPU)
+self.allocate(npu_byte_alloc, Device.NPU)</pre>
+    <span class="cap">serving/core/radix_tree.py:369–389 ; serving/core/memory_model.py apply_kv_cache_events()</span>
+  </div></details>
+
+  <!-- ============================================================ -->
+  <h2 id="pod">7. Scaling to the pod — shared JBOF &amp; contention</h2>
+  <p>A SuperPod is many racks. <b>NPU is per-GPU, CPU/FLASH per-rack, and JBOF/COLDSTORE are one
+  pod-wide pool</b> shared by every rack (reached through one BlueField channel per rack). A prefix
+  cached by any rack is reusable by every rack — and because the deep pool is shared, many racks
+  reloading at once <b>contend</b> (the analytical model serializes them on the shared channel).</p>
+  <figure>
+  <svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12">
+    <defs><marker id="f" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#57606a"/></marker></defs>
+    <rect x="20" y="20" width="200" height="76" rx="8" fill="#eaf3ff" stroke="#0969da"/><text x="120" y="38" text-anchor="middle" font-weight="700" fill="#0969da">Rack 0 (72 GPUs)</text>
+    <rect x="35" y="46" width="36" height="20" fill="#1a7f37"/><rect x="76" y="46" width="36" height="20" fill="#1a7f37"/><rect x="117" y="46" width="36" height="20" fill="#1a7f37"/>
+    <rect x="35" y="72" width="170" height="18" fill="#0969da"/><text x="120" y="86" text-anchor="middle" fill="#fff" font-size="10">CPU / FLASH (per-rack)</text>
+    <rect x="20" y="116" width="200" height="76" rx="8" fill="#eaf3ff" stroke="#0969da"/><text x="120" y="134" text-anchor="middle" font-weight="700" fill="#0969da">Rack 1 (72 GPUs)</text>
+    <rect x="35" y="142" width="36" height="20" fill="#1a7f37"/><rect x="76" y="142" width="36" height="20" fill="#1a7f37"/><rect x="117" y="142" width="36" height="20" fill="#1a7f37"/>
+    <rect x="35" y="168" width="170" height="18" fill="#0969da"/><text x="120" y="182" text-anchor="middle" fill="#fff" font-size="10">CPU / FLASH (per-rack)</text>
+    <rect x="440" y="66" width="240" height="80" rx="10" fill="#fdeee6" stroke="#bc4c00"/><text x="560" y="102" text-anchor="middle" font-weight="700" fill="#bc4c00">POD-WIDE SHARED</text><text x="560" y="124" text-anchor="middle" fill="#bc4c00">JBOF + COLDSTORE</text>
+    <line x1="222" y1="66" x2="438" y2="100" stroke="#57606a" stroke-width="1.5" marker-end="url(#f)"/>
+    <line x1="222" y1="170" x2="438" y2="130" stroke="#57606a" stroke-width="1.5" marker-end="url(#f)"/>
+    <text x="560" y="164" text-anchor="middle" font-size="11" fill="#57606a">one channel per rack → contention</text>
+  </svg>
+  <figcaption>Diagram 5 — pod-wide sharing: local NPU/CPU per rack, one shared deep pool for all.</figcaption>
+  </figure>
+  <p>A <b>144-GPU (2-rack)</b> run, same faithful setup, larger workload — NPU + per-rack CPU saturate
+  on both racks and reuse spills to the shared JBOF:</p>
+  <table>
+    <tr><th></th><th>WITH JBOF</th><th>WITHOUT</th></tr>
+    <tr><td>Reuse served from</td><td><span class="pill tag-jbof">JBOF</span> (12.1M tok, 49.3%)</td><td><span class="pill tag-cold">COLDSTORE</span> (12.1M tok)</td></tr>
+    <tr><td>Deep-tier reload</td><td class="num">5,164 ms</td><td class="num">63,821 ms</td></tr>
+    <tr><td>Throughput</td><td class="num"><b>2,142 req/s</b></td><td class="num">342 req/s</td></tr>
+  </table>
+  <h3>TTFT &amp; TBT at pod scale</h3>
+  <table>
+    <tr><th>144 GPU, per-request</th><th>WITH JBOF</th><th>WITHOUT</th><th>ratio</th></tr>
+    <tr><td>TTFT mean</td><td class="num">1,141 ms</td><td class="num">8,463 ms</td><td class="num">7.4×</td></tr>
+    <tr><td>TTFT p90</td><td class="num">2,062 ms</td><td class="num">25,385 ms</td><td class="num">12.3×</td></tr>
+    <tr><td>TTFT p99</td><td class="num">2,530 ms</td><td class="num">31,215 ms</td><td class="num">12.3×</td></tr>
+    <tr><td>TBT (per-token) mean</td><td class="num">21.2 ms</td><td class="num">21.2 ms</td><td class="num">1.0× (unchanged)</td></tr>
+  </table>
+  <div class="box insight">
+    <div class="t">Why the gap grows with scale</div>
+    At 8 GPUs the throughput gap was ~2.3×; once a full rack shares the deep pool it jumps to ~6.5×
+    (72 GPU) and holds at ~6.3× (144 GPU). The per-reload speed gap (~12×) is
+    the same — it's the tier's physics — but at rack/pod scale all GPUs pound the one shared COLDSTORE pool,
+    so their reloads also <b>queue</b>. That contention (only visible because reloads are real memory
+    loads, not isolated compute — see §8) is what blows up the no-JBOF TTFT tail to ~31 s. <b>TBT stays
+    identical</b>: the tier changes prefill, never decode.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="fidelity">8. Under the hood — MEM_LOAD vs COMP-node fidelity</h2>
+  <p>The contention above is only visible because of how we time a reload. There are two ways to put a
+  reload into the trace:</p>
+  <ul>
+    <li><b>Old — a Python "COMP node":</b> the reload latency was a closed-form number injected as an
+    all-<code>LOCAL</code> compute row. ASTRA-Sim treats it as pure compute — reloads never interfere, so
+    a shared-pool bottleneck is invisible.</li>
+    <li><b>New — a real MEM_LOAD node:</b> the reload is a memory load (the <code>JBOF:dev</code> row from
+    §3) that ASTRA-Sim times against a shared <code>MEMORY_POOL</code>, so concurrent reloads
+    <b>serialize</b> on the shared channel. That serialization is the contention.</li>
+  </ul>
+  <figure>
+  <svg viewBox="0 0 740 150" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12">
+    <text x="10" y="18" font-weight="700" fill="#6e7781">OLD — isolated compute (parallel)</text>
+    <rect x="20" y="30" width="120" height="15" rx="3" fill="#eef1f4" stroke="#6e7781"/><rect x="20" y="48" width="120" height="15" rx="3" fill="#eef1f4" stroke="#6e7781"/><rect x="20" y="66" width="120" height="15" rx="3" fill="#eef1f4" stroke="#6e7781"/>
+    <line x1="20" y1="90" x2="140" y2="90" stroke="#1a7f37" stroke-width="2.5"/><text x="80" y="105" text-anchor="middle" font-size="10" fill="#1a7f37">wall = 1× · bottleneck invisible</text>
+    <line x1="370" y1="8" x2="370" y2="130" stroke="#d0d7de" stroke-dasharray="4,4"/>
+    <text x="390" y="18" font-weight="700" fill="#bc4c00">NEW — shared pool (serialized)</text>
+    <rect x="400" y="48" width="95" height="15" rx="3" fill="#fdeee6" stroke="#bc4c00"/><rect x="495" y="48" width="95" height="15" rx="3" fill="#fdeee6" stroke="#bc4c00"/><rect x="590" y="48" width="95" height="15" rx="3" fill="#fdeee6" stroke="#bc4c00"/>
+    <line x1="400" y1="90" x2="685" y2="90" stroke="#bc4c00" stroke-width="2.5"/><text x="542" y="105" text-anchor="middle" font-size="10" fill="#bc4c00">wall = 3× · contention captured</text>
+  </svg>
+  <figcaption>Diagram 6 — same three reloads, two models: parallel (old) vs queued on the shared pool (new).</figcaption>
+  </figure>
+  <div class="box note">
+    <div class="t">1 ns anchor + formula parity</div>
+    The reload row uses <code>comp_time = 1 ns</code> (just enough to anchor the MEM_LOAD on the critical
+    path — no double-count), and ASTRA-Sim's memory-runtime uses the <em>same</em> formula as the Python
+    model, so an <b>uncontended</b> reload costs exactly what it used to (regression-safe); contention is
+    layered on top. Result: the summary's <code>Reload(ms)</code> is the uncontended reference; the
+    end-to-end throughput/TTFT includes contention.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="ref">9. Reference</h2>
+  <h3>Reproduce these runs</h3>
+  <pre class="code"><span class="cm"># config: &lt;racks&gt; &lt;jbof|nojbof&gt; &lt;out.json&gt; &lt;gpus/rack&gt; [npu cpu jbof cold  GiB per GPU]</span>
+python configs/cluster/make_pod_prop_mini_config.py 1 jbof   c8_jbof.json   8  3.9 0.85 18.8 188
+python configs/cluster/make_pod_prop_mini_config.py 1 nojbof c8_nojbof.json 8  3.9 0.85 18.8 188
+<span class="cm"># workload: &lt;out.jsonl&gt; &lt;n_ctx&gt; &lt;ctx_len&gt; &lt;tail&gt; &lt;out_len&gt; &lt;gap_ms&gt;</span>
+python workloads/generators/make_rack_fill.py workloads/w8.jsonl 450 2048 8 4 3000
+<span class="cm"># run WITH JBOF (full chain; reuse lands in JBOF). For the no-JBOF baseline,</span>
+<span class="cm"># swap the config to c8_nojbof.json (same flags) -&gt; reuse falls to COLDSTORE.</span>
+python -m serving --cluster-config c8_jbof.json --dtype float16 --block-size 16 \
+  --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+  --max-num-seqs 8 --dataset workloads/w8.jsonl --output out8.csv</pre>
+  <p>For a rack use <code>72</code> GPUs/rack and a bigger <code>n_ctx</code>; for the pod use
+  <code>2</code>+ racks. The per-GPU cap args keep the faithful Vera Rubin ratios (§5).</p>
+
+  <div class="box gotcha">
+    <div class="t">Build note (protobuf)</div>
+    Re-running <code>scripts/compile.sh</code> reinstalls the Chakra converter and regenerates its
+    protobuf bindings with the container's <code>protoc</code> (28.3). If you hit
+    <code>VersionError: … gencode 7.35.0 runtime 6.33.6</code>, run
+    <code>pip3 install --upgrade protobuf</code> (→ 7.35.1); the <code>chakra</code> pin warning is
+    harmless (ET wire format is stable).
+  </div>
+
+  <h3>The metrics, in one place</h3>
+  <table>
+    <tr><th>Metric</th><th>What it is</th><th>Watch for</th></tr>
+    <tr><td>TTFT</td><td>time to first token (prefill + reload)</td><td><b>the tier signal</b> — fast tier → low TTFT tail</td></tr>
+    <tr><td>TBT / TPOT</td><td>time between output tokens (decode)</td><td>the control — should stay flat</td></tr>
+    <tr><td>E2E latency</td><td>arrival → last token</td><td>overall SLO</td></tr>
+    <tr><td>Reload(ms)</td><td>uncontended cost of serving hits below NPU</td><td>per-tier speed (JBOF ≪ COLDSTORE)</td></tr>
+    <tr><td>Hit % / tier</td><td>share of reused tokens per tier</td><td>where the working set landed</td></tr>
+  </table>
+
+  <hr>
+  <p style="color:var(--muted);font-size:13px">Generated for the LLMServingSim team introduction. Code
+  references are to the repo at the time of writing; see the cited <code>file:line</code> anchors for
+  the current source.</p>
+
+</main>
+</div>
+</body>
+</html>

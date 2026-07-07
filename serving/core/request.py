@@ -37,7 +37,7 @@ class Request:
         self._prefix_npu_stats_counted = False
         self._prefix_storage_stats_counted = False
 
-        # For multi-tier spillover (FLASH/ICMS/COLDSTORE)
+        # For multi-tier spillover (FLASH/JBOF/COLDSTORE)
         self.tier_reload = {}                 # deep-tier Device -> tokens to reload on a hit
         self._prefix_tier_stats_counted = False
         self._deep_reload_counted = False
@@ -92,7 +92,7 @@ class Batch:
         self.kv_size = kv_size
         self.evict = evict
         self.load = load
-        # Deep-tier (FLASH/ICMS/COLDSTORE) reloads: list of (label, comp_time_ns)
+        # Deep-tier (FLASH/JBOF/COLDSTORE) reloads: list of (label, comp_time_ns)
         # emitted as plain compute nodes in the trace (Python-timed latency).
         self.tier_loads = tier_loads if tier_loads is not None else []
         # for attn prediction

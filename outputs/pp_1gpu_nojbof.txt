@@ -1,0 +1,101 @@
+─────────────────────────────── LLMServingSim2.0 ───────────────────────────────
+  A Unified Simulator for Heterogeneous Hardware and Serving Techniques in LLM  
+────────────────────────────────────────────────────────────────────────────────
+      _    _    __  __ ___              _           ___ _       ___   __        
+     | |  | |  |  \/  / __| ___ _ ___ _(_)_ _  __ _/ __(_)_ __ |_  ) /  \       
+     | |__| |__| |\/| \__ \/ -_) '_\ V / | ' \/ _` \__ \ | '  \ / / | () |      
+     |____|____|_|  |_|___/\___|_|  \_/|_|_||_\__, |___/_|_|_|_/___(_)__/       
+                                              |___/                             
+────────────────────────────────────────────────────────────────────────────────
+                              Input configuration                               
+
+  • Cluster config             : configs/cluster/pod_prop_mini_1gpu_s_nojbof.json
+  • Run ID                     : run_1783403791091691_47013
+  • ASTRA-Sim inputs root      : /app/LLMServingSim/astra-sim/inputs/runs/run_1783403791091691_47013
+  • Dataset                    : workloads/pod_prop_1gpu.jsonl
+  • Max num seqs               : 8
+  • Max batched tokens         : 2048
+  • Block size (tokens)        : 16
+  • Request routing            : LOAD
+  • Expert routing             : BALANCED
+  • Prefix caching             : ENABLED
+  • Chunked prefill            : ENABLED
+  • Prefix caching scheme      : tiered, depth <= COLDSTORE (config-driven)
+  • Centralized prefix caching : ENABLED
+  • Offload attention to PIM   : DISABLED
+  • Sub-batch interleaving     : DISABLED
+  • Prioritize prefill         : DISABLED
+  • Network backend            : analytical
+  • Log interval (s)           : 1.0
+  • Log level                  : WARNING
+────────────────────────────────────────────────────────────────────────────────
+▶ Starting simulation...
+
+Active prefix-cache tiers: NPU -> CPU -> COLDSTORE   (skipped, absent from config: FLASH, JBOF)
+[1.0s] Avg prompt throughput: 163609.0 tokens/s, Avg generation throughput: 310.0 tokens/s
+        ├─Running Instance[0]: 5 reqs, Waiting: 39 reqs, Total # 1 NPUs, Each NPU Memory Usage 3952.32 MB (98.966 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 163840)
+        ├─Node[0]: Total CPU Memory Usage 732.00 MB, 84.099 % Used , Prefix Cache Hit ratio 0.00 %, (0 / 163840)
+        └─Node[0] COLDSTORE: Usage 2560.00 MB, 1.330 % Used
+[2.0s] Avg prompt throughput: 82151.0 tokens/s, Avg generation throughput: 170.0 tokens/s
+        ├─Running Instance[0]: 0 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 3988.07 MB (99.862 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 245760)
+        ├─Node[0]: Total CPU Memory Usage 736.00 MB, 84.559 % Used , Prefix Cache Hit ratio 0.00 %, (0 / 245760)
+        └─Node[0] COLDSTORE: Usage 3845.62 MB, 1.998 % Used
+[3.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s
+        ├─Running Instance[0]: 8 reqs, Waiting: 112 reqs, Total # 1 NPUs, Each NPU Memory Usage 3732.07 MB (93.451 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 245760)
+        ├─Node[0]: Total CPU Memory Usage 608.00 MB, 69.853 % Used , Prefix Cache Hit ratio 0.00 %, (0 / 245760)
+        └─Node[0] COLDSTORE: Usage 3845.62 MB, 1.998 % Used
+[4.0s] Avg prompt throughput: 180928.0 tokens/s, Avg generation throughput: 328.0 tokens/s
+        ├─Running Instance[0]: 8 reqs, Waiting: 32 reqs, Total # 1 NPUs, Each NPU Memory Usage 3988.07 MB (99.862 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 426688)
+        ├─Node[0]: Total CPU Memory Usage 608.00 MB, 69.853 % Used , Prefix Cache Hit ratio 0.00 %, (0 / 426688)
+        └─Node[0] COLDSTORE: Usage 3860.38 MB, 2.005 % Used
+────────────────────────────────────────────────────────────────────────────────
+▶ Exiting simulation...
+
+────────────────────────────────────────────────────────────────────────────────
+▶ Simulation results...
+
+Total simulation time: 0h 0m 8.699s
+────────────────────────────── Throughput Results ──────────────────────────────
+Total requests:                                                     240
+Total clocks (ns):                                                  4442695653
+Total latency (s):                                                  4.443
+Total input tokens:                                                 492480
+Total generated tokens:                                             960
+Request throughput (req/s):                                         54.02
+Average prompt throughput (tok/s):                                  110851.62
+Average generation throughput (tok/s):                              216.09
+Total token throughput (tok/s):                                     111067.70
+Throughput per 1.0 sec ([prompt_throughput], [gen_throughput]): [(163609.0, 310.0), (82151.0, 170.0), (0.0, 0.0), (180928.0, 328.0)]
+────────────────────────────────────────────────────────────────────────────────
+────────────────────── Prefix Caching Results (per tier) ───────────────────────
+Total requested prompt tokens:                                      492480
+Tier       Hit tokens    Hit %  Reload(ms)   Usage(MB)   Cap(GB)   % used
+NPU                 0    0.00%        0.00      320.00      0.32  98.301%
+CPU                 0    0.00%        0.00      608.00      0.85  69.853%
+COLDSTORE      245760   49.90%     1288.59     3866.25    188.00   2.008%
+Total prefix hit ratio (%):                                         49.90
+Total prefix-reload latency (ms):                                   1288.591
+Reload latency as % of total sim time:                              29.005
+Mean reload latency per 1K reloaded tokens (ms):                    5.243
+────────────────────────────────────────────────────────────────────────────────
+──────────────────────── Latency Summary (cluster-wide) ────────────────────────
+Finished requests: 240    Instances: 1
+Metric                  mean       p50       p90       p99       max    (ms)
+TTFT                  768.44    763.05   1339.91   1492.49   1513.26
+TBT (per-token)         7.28      2.22     12.64     12.66     12.66
+E2E latency           790.28    769.70   1360.71   1514.55   1519.56
+────────────────────────────────────────────────────────────────────────────────
+───────────────────────────────── Instance [0] ─────────────────────────────────
+───────────────────────────── Time to First Token ──────────────────────────────
+Mean TTFT (ms):                                                     768.44
+Median TTFT (ms):                                                   763.05
+P99 TTFT (ms):                                                      1492.49
+─────────────────── Time per Output Token (excl. 1st token) ────────────────────
+Mean TPOT (ms):                                                     7.28
+Median TPOT (ms):                                                   2.22
+P99 TPOT (ms):                                                      12.66
+───────────────────────────── Inter-token Latency ──────────────────────────────
+Mean ITL (ms) :                                                     7.28
+Median ITL (ms) :                                                   2.22
+P99 ITL (ms) :                                                      12.66
+────────────────────────────────────────────────────────────────────────────────

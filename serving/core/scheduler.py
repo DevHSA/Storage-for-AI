@@ -547,7 +547,7 @@ class Scheduler:
                 if req.is_prefill() and req.storage_cache_hit > req.npu_cache_hit:
                     prefix_load_size += (req.storage_cache_hit - req.npu_cache_hit) * self.memory.get_kv(1)
 
-                # Load deeper-tier prefix segments (FLASH/ICMS/COLDSTORE) — counted
+                # Load deeper-tier prefix segments (FLASH/JBOF/COLDSTORE) — counted
                 # once per request; charged as Python-timed comp_time in the trace.
                 if req.is_prefill() and not req._deep_reload_counted and req.tier_reload:
                     for dev, toks in req.tier_reload.items():
@@ -642,14 +642,25 @@ class Scheduler:
                     self.memory.storage_cache_evicted_req(req)
 
             
-            # Deep-tier reloads -> Python-timed compute nodes (label, comp_time_ns).
-            # Also record per-tier reload cost for the reload-latency metric.
+            # Deep-tier reloads -> real ASTRA-Sim MEM_LOAD nodes. Emit
+            # (tier_name, reload_bytes, device_id); the trace generator turns each
+            # into a middle-node MEM_LOAD routed to that tier's memory location, so
+            # ASTRA-Sim times the reload (with contention) instead of a static
+            # Python COMP-node latency. record_reload still keeps the analytical
+            # metric (now the *uncontended* reference; the sim clock reflects the
+            # contended cost). device_id selects the AnalyticalMemory queue: every
+            # deep tier uses the per-RACK channel (node_id). FLASH is node-local;
+            # JBOF/COLDSTORE are ONE pod-wide shared pool (see __main__) reached
+            # through one BlueField-4 channel per rack (num-devices = num_nodes) --
+            # racks' reloads run on parallel channels (aggregate 16x bandwidth),
+            # while the 72 GPUs within a rack serialize on their channel.
             tier_loads = []
             for dev, b in tier_load_bytes.items():
                 lat = self.memory.tier_load_latency_ns(dev, b)
                 self.memory.record_reload(dev, b, lat)
-                if lat > 0:
-                    tier_loads.append((f"{dev.name.lower()}_load", lat))
+                if b > 0:
+                    device_id = self.memory.node_id   # per-rack channel for every deep tier
+                    tier_loads.append((dev.name, b, device_id))
             # CPU reload cost (served via the ASTRA-Sim REMOTE path; the metric
             # uses the same analytical model as the deep tiers for comparability).
             if prefix_load_size > 0:

@@ -1,0 +1,1262 @@
+====================================================================================================
+LLMServingSim — execution flow, in plain English (Python wrapper only)
+====================================================================================================
+command : /app/LLMServingSim/serving/__main__.py --cluster-config configs/cluster/single_node_single_instance.json --dtype float16 --block-size 16 --dataset workloads/example_trace.jsonl --output outputs/trace_demo.csv --num-reqs 2 --trace-flow
+log file: /app/LLMServingSim/outputs/flow_trace.log
+view    : COMPACT — each function shown once (first call), in call order
+
+How to read this file:
+  * Steps are listed in the order functions were called (Step 1, 2, 3, ...).
+  * Indentation shows nesting: an indented step was called by the step above it at one-less indent.
+  * Each step says what the function does, the input it received, and the value it returned.
+  * Compact view: each function appears once. The INVENTORY at the very bottom lists
+    every function with its TOTAL call count (e.g. the scheduling loop repeats many times).
+  * ASTRA-Sim's C++ simulator runs as a separate process: 'write_flush' hands a step to it,
+    and 'read_wait'/'parse_output' read back the cycle count. Its C++ internals are not traced.
+====================================================================================================
+
+Step 1  ·  resolve_run_id   [run-paths]   serving/core/run_paths.py:19   (called by (top level))
+    This function: Return a path-safe run id.
+    The input to this function is: run_id=None
+    The function output: 'run_1783287406963211_3725'
+
+Step 2  ·  build_run_paths   [run-paths]   serving/core/run_paths.py:36   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: astra_sim='/app/LLMServingSim/astra-sim', run_id='run_1783287406963211_3725', inputs_root=None
+    The function output: <RunPaths object>
+
+Step 3  ·  _resolve_output_file   [orchestration]   serving/__main__.py:79   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: path='outputs/trace_demo.csv', run_id='run_1783287406963211_3725'
+    The function output: 'outputs/trace_demo.csv'
+
+Step 4  ·  configure_logger   [logging]   serving/core/logger.py:282   (called by (top level))
+    This function: Initialize the project logger.
+    The input to this function is: level='WARNING', log_file=None
+    The function output: None
+
+    Step 5  ·  _RichSimHandler.__init__   [logging]   serving/core/logger.py:132   (called by configure_logger)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: console=<Console object>
+        The function output: None
+
+Step 6  ·  get_logger   [logging]   serving/core/logger.py:324   (called by (top level))
+    This function: Return a ``ComponentLoggerAdapter`` bound to this project's root.
+    The input to this function is: component='Main', node_id=None, instance_id=None
+    The function output: <ComponentLoggerAdapter instance_id=None>
+
+    Step 7  ·  ComponentLoggerAdapter.__init__   [logging]   serving/core/logger.py:238   (called by get_logger)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: logger=<Logger name='llmservingsim'>, component='Main', node_id=None, instance_id=None
+        The function output: None
+
+Step 8  ·  print_banner   [logging]   serving/core/logger.py:401   (called by (top level))
+    This function: Render the startup banner — title, tagline, ASCII logo.
+    The input to this function is: (no arguments)
+    The function output: None
+
+    Step 9  ·  _centered_logo   [logging]   serving/core/logger.py:390   (called by print_banner)
+        This function: Return a Rich renderable that centres the multi-line ASCII
+        The input to this function is: (no arguments)
+        The function output: <Align object>
+
+Step 10  ·  print_input_config   [logging]   serving/core/logger.py:420   (called by (top level))
+    This function: Render the argparse-namespace configuration block used at startup.
+    The input to this function is: args=<Namespace object>
+    The function output: None
+
+    Step 11  ·  add   [logging]   serving/core/logger.py:450   (called by print_input_config)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: attr='cluster_config', label='Cluster config', conv=<function print_input_config.<locals>._na at 0x731c6f19c8b0>
+        The function output: None
+
+        Step 12  ·  _na   [logging]   serving/core/logger.py:431   (called by add)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: x='configs/cluster/single_node_single_instance.json'
+            The function output: 'configs/cluster/single_node_single_instance.json'
+
+    Step 13  ·  _inf0   [logging]   serving/core/logger.py:422   (called by add)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: x=128
+        The function output: 128
+
+    Step 14  ·  _yn   [logging]   serving/core/logger.py:428   (called by add)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: x=True
+        The function output: 'ENABLED'
+
+    Step 15  ·  _pc   [logging]   serving/core/logger.py:434   (called by add)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: x='None'
+        The function output: 'xPU-Only'
+
+Step 16  ·  print_markup   [logging]   serving/core/logger.py:369   (called by (top level))
+    This function: Print a line of Rich markup without any logging decoration.
+    The input to this function is: message='[sim.heading]▶ Starting simulation...[/]\n'
+    The function output: None
+
+Step 17  ·  _load_cluster_config_for_overrides   [orchestration]   serving/__main__.py:74   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: path='configs/cluster/single_node_single_instance.json'
+    The function output: <dict of 4 items, keys=['num_nodes', 'link_bw', 'link_latency', 'nodes']>
+
+    Step 18  ·  _cluster_config_path   [orchestration]   serving/__main__.py:68   (called by _load_cluster_config_for_overrides)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: path='configs/cluster/single_node_single_instance.json'
+        The function output: '../configs/cluster/single_node_single_instance.json'
+
+Step 19  ·  _iter_raw_instances   [orchestration]   serving/__main__.py:117   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: cluster_config=<dict of 4 items, keys=['num_nodes', 'link_bw', 'link_latency', 'nodes']>
+    The function output: <dict of 6 items, keys=['model_name', 'hardware', 'npu_mem', 'num_npus', 'tp_size', 'pd_type']>
+
+Step 20  ·  build_cluster_config   [config-builder]   serving/core/config_builder.py:273   (called by (top level))
+    This function: Parses the cluster JSON and WRITES the ASTRA-Sim input files (network.yml / system.json / memory_expansion.json, including the deep tiers).
+    The input to this function is: astra_sim='/app/LLMServingSim/astra-sim', cluster_config_path='configs/cluster/single_node_single_instance.json', enable_local_offloading=False, enable_attn_offloading=False, inputs_root='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725'
+    The function output: <dict of 27 items, keys=['num_nodes', 'num_instances', 'instances', 'inst2node_mapping', 'inst2npu_mapping', 'npu2inst_mapping']>
+
+    Step 21  ·  _prepare_input_config_paths   [config-builder]   serving/core/config_builder.py:28   (called by build_cluster_config)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: astra_sim='/app/LLMServingSim/astra-sim', inputs_root='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725'
+        The function output: <tuple of 4 items, e.g. '/app/LLMServingSim/astra-sim/inputs/runs/run_17832...(+16c)'>
+
+    Step 22  ·  get_config   [utils]   serving/core/utils.py:61   (called by build_cluster_config)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: model_name='meta-llama/Llama-3.1-8B'
+        The function output: <dict of 24 items, keys=['architectures', 'attention_bias', 'attention_dropout', 'bos_token_id', 'eos_token_id', 'hidden_act']>
+
+    Step 23  ·  _resolve_parallelism   [config-builder]   serving/core/config_builder.py:55   (called by build_cluster_config)
+        This function: Infer and validate tp_size, pp_size, ep_size from partial config.
+        The input to this function is: instance=<dict of 6 items, keys=['model_name', 'hardware', 'npu_mem', 'num_npus', 'tp_size', 'pd_type']>, model_config=<dict of 24 items, keys=['architectures', 'attention_bias', 'attention_dropout', 'bos_token_id', 'eos_token_id', 'hidden_act']>
+        The function output: <tuple of 5 items, e.g. 1>
+
+    Step 24  ·  _mem_str   [config-builder]   serving/core/config_builder.py:886   (called by build_cluster_config)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: loc='npu', node_id=0
+        The function output: 'LOCAL'
+
+    Step 25  ·  _resolve_dp_groups   [config-builder]   serving/core/config_builder.py:132   (called by build_cluster_config)
+        This function: Validate DP groups and compute dp_group_size and ep_total for each instance.
+        The input to this function is: all_instances=<list of 1 items, e.g. <dict of 11 items, keys=['model_name', 'hardware', 'npu_mem', 'num_npus', 'tp_size', 'pd_type']>>
+        The function output: None
+
+        Step 26  ·  _compute_network_dims   [config-builder]   serving/core/config_builder.py:192   (called by _resolve_dp_groups)
+            This function: Infer ASTRA-Sim topology dimensions from resolved instances.
+            The input to this function is: instances=<list of 1 items, e.g. <dict of 11 items, keys=['model_name', 'hardware', 'npu_mem', 'num_npus', 'tp_size', 'pd_type']>>
+            The function output: <list of 1 items, e.g. 1>
+
+    Step 27  ·  _sync_system_collective_dims   [config-builder]   serving/core/config_builder.py:259   (called by build_cluster_config)
+        This function: Match system collective implementation arity to final topology dims.
+        The input to this function is: system_config_path='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725/system/system.json', instances=<list of 1 items, e.g. <dict of 16 items, keys=['model_name', 'hardware', 'npu_mem', 'num_npus', 'tp_size', 'pd_type']>>
+        The function output: None
+
+    Step 28  ·  _create_network_config   [config-builder]   serving/core/config_builder.py:742   (called by build_cluster_config)
+        This function: Create ASTRA-Sim network topology config.
+        The input to this function is: network_config_path='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725/network/network.yml', instances=<list of 1 items, e.g. <dict of 16 items, keys=['model_name', 'hardware', 'npu_mem', 'num_npus', 'tp_size', 'pd_type']>>, link_bw=16, link_latency=20000
+        The function output: None
+
+        Step 29  ·  _normalize_network_dim_values   [config-builder]   serving/core/config_builder.py:234   (called by _create_network_config)
+            This function: Normalize scalar-or-list network settings to one float per topology dim.
+            The input to this function is: raw_value=16, num_dims=1, field_name='link_bw'
+            The function output: <FlowStyleList of 1 items, e.g. 16.0>
+
+        Step 30  ·  represent_flowstyle_list   [config-builder]   serving/core/config_builder.py:13   (called by _create_network_config)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: dumper=<Dumper object>, data=<FlowStyleList of 1 items, e.g. 'FullyConnected'>
+            The function output: <SequenceNode id='sequence'>
+
+    Step 31  ·  _validate_memory_config   [config-builder]   serving/core/config_builder.py:765   (called by build_cluster_config)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: memory_config_path='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725/memory/memory_expansion.json', placement=<list of 1 items, e.g. <dict of 3 items, keys=['default', 'block', 'layer']>>, enable_local_offloading=False
+        The function output: None
+
+        Step 32  ·  _check_entry   [config-builder]   serving/core/config_builder.py:798   (called by _validate_memory_config)
+            This function: Validate one entry dict: may include weights/kv_loc/kv_evict_loc.
+            The input to this function is: obj_name='default', entry=<dict of 3 items, keys=['weights', 'kv_loc', 'kv_evict_loc']>
+            The function output: None
+
+            Step 33  ·  _ok   [config-builder]   serving/core/config_builder.py:789   (called by _check_entry)
+                This function: Allow LOCAL when local offloading is disabled; else must be in allowed set.
+                The input to this function is: loc='LOCAL'
+                The function output: True
+
+                Step 34  ·  _norm   [config-builder]   serving/core/config_builder.py:877   (called by _ok)
+                    This function: Upper-case and ensure ':0' suffix if missing.
+                    The input to this function is: loc='LOCAL'
+                    The function output: 'LOCAL:0'
+
+Step 35  ·  _build_instance_runtime_configs   [orchestration]   serving/__main__.py:137   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: instances=<list of 1 items, e.g. <dict of 16 items, keys=['model_name', 'hardware', 'npu_mem', 'num_npus', 'tp_size', 'pd_type']>>, args=<Namespace object>, dtype_to_bits=<dict of 5 items, keys=['float16', 'bfloat16', 'float32', 'fp8', 'int8']>
+    The function output: <list of 1 items, e.g. <dict of 14 items, keys=['max_num_seqs', 'max_num_batched_tokens', 'long_prefill_token_threshold', 'block_size', 'dtype', 'fp']>>
+
+    Step 36  ·  _resolve_instance_dtype   [orchestration]   serving/__main__.py:123   (called by _build_instance_runtime_configs)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: instance=<dict of 16 items, keys=['model_name', 'hardware', 'npu_mem', 'num_npus', 'tp_size', 'pd_type']>, cli_dtype='float16', dtype_to_bits=<dict of 5 items, keys=['float16', 'bfloat16', 'float32', 'fp8', 'int8']>
+        The function output: 'float16'
+
+    Step 37  ·  _runtime_limit   [orchestration]   serving/__main__.py:64   (called by _build_instance_runtime_configs)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: value=128
+        The function output: 128
+
+Step 38  ·  Scheduler.__init__   [scheduler]   serving/core/scheduler.py:19   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: model='meta-llama/Llama-3.1-8B', node_id=0, instance_id=0, max_num_seqs=128, max_num_batched_tokens=2048, num_npus=1, tp_size=1, pp_size=1, npu_mem=96, cpu_mem=512, start_npu=0, pd_type=None, fp=16, block_size=16, req_num=2, prioritize_prefill=False, enable_prefix_caching=True, enable_prefix_sharing=False, prefix_pool=None, prefix_storage=None, enable_chunked_prefill=True, long_prefill_token_threshold=0, cxl_mem=0, ep_size=1, kv_cache_dtype='auto', deep_tiers=<list of 0 items>, cpu_mem_bw=256, cpu_mem_latency=0
+    The function output: None
+
+    Step 39  ·  MemoryModel.__init__   [memory-model]   serving/core/memory_model.py:20   (called by Scheduler.__init__)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: model='meta-llama/Llama-3.1-8B', instance_id=0, node_id=0, num_npus=1, tp_size=1, npu_mem=96, cpu_mem=512, block_size=16, fp=16, enable_prefix_caching=True, enable_prefix_sharing=False, prefix_pool=None, prefix_storage=None, cxl_mem=0, ep_size=1, pp_size=1, kv_cache_dtype='auto', deep_tiers=<list of 0 items>, cpu_mem_bw=256, cpu_mem_latency=0
+        The function output: None
+
+        Step 40  ·  MemoryModel.get_weight   [memory-model]   serving/core/memory_model.py:136   (called by MemoryModel.__init__)
+            This function: Per-GPU model weight in bytes.
+            The input to this function is: (no arguments)
+            The function output: 16060522496
+
+            Step 41  ·  calculate_sizes   [memory-model]   serving/core/memory_model.py:812   (called by MemoryModel.get_weight)
+                This function: Calculate input, weight, and output tensor sizes for a given layer.
+                The input to this function is: model='meta-llama/Llama-3.1-8B', layer_name='embedding', length=1, kv_len=None, pim=False, parallel=1, fp=2
+                The function output: <tuple of 3 items, e.g. 4>
+
+            Step 42  ·  MemoryModel._get_weight_per_block   [memory-model]   serving/core/memory_model.py:166   (called by MemoryModel.get_weight)
+                This function: Per-block weight: dense layers use TP, MoE experts use EP.
+                The input to this function is: tp=1, ep=1, fp=2
+                The function output: 436224000
+
+        Step 43  ·  MemoryModel.get_kv   [memory-model]   serving/core/memory_model.py:186   (called by MemoryModel.__init__)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: seq=1
+            The function output: 131072
+
+        Step 44  ·  RadixCache.__init__   [prefix-cache]   serving/core/radix_tree.py:135   (called by MemoryModel.__init__)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: node_id=0, device='NPU', page_size=16, capacity=87018692608, kv_size=131072, instance_id=0, enable_kv_cache_events=True
+            The function output: None
+
+            Step 45  ·  RadixCache.reset   [prefix-cache]   serving/core/radix_tree.py:229   (called by RadixCache.__init__)
+                This function: (no docstring — inspect the source for details)
+                The input to this function is: (no arguments)
+                The function output: None
+
+                Step 46  ·  TreeNode.__init__   [prefix-cache]   serving/core/radix_tree.py:78   (called by RadixCache.reset)
+                    This function: (no docstring — inspect the source for details)
+                    The input to this function is: id=None, device=None
+                    The function output: None
+
+                Step 47  ·  RadixCache._record_all_cleared_event   [prefix-cache]   serving/core/radix_tree.py:640   (called by RadixCache.reset)
+                    This function: (no docstring — inspect the source for details)
+                    The input to this function is: (no arguments)
+                    The function output: None
+
+Step 48  ·  Controller.__init__   [ASTRA-Sim-IPC]   serving/core/controller.py:5   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: total_num=1
+    The function output: None
+
+Step 49  ·  Router.__init__   [router]   serving/core/router.py:8   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: num_instances=1, schedulers=<list of 1 items, e.g. <Scheduler instance_id=0>>, req_num=2, routing_policy='LOAD', seed=42
+    The function output: None
+
+Step 50  ·  Router.load_requests   [router]   serving/core/router.py:103   (called by (top level))
+    This function: Load requests from dataset into pending queue (not yet routed).
+    The input to this function is: path='workloads/example_trace.jsonl', enable_prefix_caching=True, is_init=True
+    The function output: None
+
+    Step 51  ·  Router._load_flat_request   [router]   serving/core/router.py:139   (called by Router.load_requests)
+        This function: Load a single flat request into pending queue.
+        The input to this function is: row=<dict of 5 items, keys=['input_toks', 'output_toks', 'arrival_time_ns', 'input_tok_ids', 'output_tok_ids']>, enable_prefix_caching=True
+        The function output: None
+
+Step 52  ·  Router.get_first_arrival_time   [router]   serving/core/router.py:227   (called by (top level))
+    This function: Return the first request's arrival time in ns, or 1 if no requests.
+    The input to this function is: (no arguments)
+    The function output: 46926808
+
+Step 53  ·  generate_event   [trace-gen]   serving/core/trace_generator.py:1591   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: alarm=46926808, inputs_root='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725'
+    The function output: None
+
+    Step 54  ·  input_path   [run-paths]   serving/core/run_paths.py:49   (called by generate_event)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: inputs_root='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725'
+        The function output: '/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725/trace/event_handler.txt'
+
+    Step 55  ·  header   [utils]   serving/core/utils.py:40   (called by generate_event)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: (no arguments)
+        The function output: 'Layername                     comp_time      input_loc      input_size     weight_loc     weight_size    output_loc     output_size    comm_...(+41c)'
+
+    Step 56  ·  formatter   [utils]   serving/core/utils.py:54   (called by generate_event)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: layername='event_46926808ns', comp_time=46926808, input_loc='REMOTE', input_size=0, weight_loc='LOCAL', weight_size=0, output_loc='REMOTE', output_size=0, comm_type='NONE', comm_size=0, misc='NONE'
+        The function output: 'event_46926808ns              46926808       REMOTE         0              LOCAL          0              REMOTE         0              NONE ...(+41c)'
+
+Step 57  ·  generate_graph   [graph-gen(Chakra)]   serving/core/graph_generator.py:10   (called by (top level))
+    This function: Converts the text trace into a Chakra .et graph by spawning the chakra_converter subprocess.
+    The input to this function is: batch=None, hardware=None, num_npus=1, node_id=0, instance_id=0, npu_offset=0, enable_local_offloading=False, event=True, workload_name=None, inputs_root='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725'
+    The function output: None
+
+Step 58  ·  get_workload   [utils]   serving/core/utils.py:27   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: batch=None, hardware=None, instance_id=0, event=True, workload_name=None, inputs_root='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725'
+    The function output: '/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725/workload/event_handler/llm'
+
+Step 59  ·  Controller.read_wait   [ASTRA-Sim-IPC]   serving/core/controller.py:13   (called by (top level))
+    This function: BLOCKS on the ASTRA-Sim co-process's stdout until it finishes simulating this step.
+    The input to this function is: p=<Popen object>
+    The function output: <list of 8 items, e.g. ''>
+
+Step 60  ·  Controller.parse_output   [ASTRA-Sim-IPC]   serving/core/controller.py:54   (called by (top level))
+    This function: Parses ASTRA-Sim's stdout line into the step's cycle count and advances the simulated clock.
+    The input to this function is: output='[2026-07-05 21:36:47.158] [workload] [info] sys[0] iteration 0 finished, 46926808 cycles, exposed communication 0 cycles.\n'
+    The function output: <dict of 3 items, keys=['sys', 'id', 'cycle']>
+
+Step 61  ·  Router.route_arrived_requests   [router]   serving/core/router.py:189   (called by (top level))
+    This function: Route requests that have arrived by current_time_ns to instances.
+    The input to this function is: current_time_ns=46926808
+    The function output: 1
+
+    Step 62  ·  Router._least_load_select   [router]   serving/core/router.py:74   (called by Router.route_arrived_requests)
+        This function: vLLM-style least-loaded routing, normalized by instance capacity.
+        The input to this function is: schedulers=<list of 1 items, e.g. <Scheduler instance_id=0>>, role='prefill'
+        The function output: 0
+
+        Step 63  ·  Router._get_counter   [router]   serving/core/router.py:56   (called by Router._least_load_select)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: role='prefill'
+            The function output: 0
+
+        Step 64  ·  Router._set_counter   [router]   serving/core/router.py:59   (called by Router._least_load_select)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: role='prefill', value=0
+            The function output: None
+
+    Step 65  ·  Scheduler.add_request   [scheduler]   serving/core/scheduler.py:867   (called by Router.route_arrived_requests)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: req=<list of 8 items, e.g. 0>, is_init=True
+        The function output: None
+
+        Step 66  ·  Request.__init__   [request]   serving/core/request.py:3   (called by Scheduler.add_request)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: id=0, model='meta-llama/Llama-3.1-8B', input=10, output=80, arrival=46926808, instance_id=0, input_hash_ids=<list of 10 items, e.g. 1>, output_hash_ids=<list of 70 items, e.g. 11>, is_init=True
+            The function output: None
+
+Step 67  ·  Scheduler.add_done   [scheduler]   serving/core/scheduler.py:706   (called by (top level))
+    This function: Post-step bookkeeping: mark finished requests and write computed prefixes through into every tier.
+    The input to this function is: id=0, sys=0, finish=46926808
+    The function output: <tuple of 3 items, e.g. 0>
+
+Step 68  ·  Scheduler.schedule   [scheduler]   serving/core/scheduler.py:56   (called by (top level))
+    This function: Runs one scheduling step for this instance (picks the next batch of requests to simulate).
+    The input to this function is: current=46926808, sys=0, batch_id=0
+    The function output: <Batch batch_id=0>
+
+    Step 69  ·  Scheduler.schedule_with_prefix   [scheduler]   serving/core/scheduler.py:334   (called by Scheduler.schedule)
+        This function: Scheduling step WITH prefix caching: match cached prefixes, apply the token budget, evict from NPU, and build the Batch (+ tier reloads).
+        The input to this function is: current=46926808, sys=0, batch_id=0
+        The function output: <Batch batch_id=0>
+
+        Step 70  ·  Request.is_prefill   [request]   serving/core/request.py:76   (called by Scheduler.schedule_with_prefix)
+            This function: Check if request is still in prefill phase (has tokens left to compute)
+            The input to this function is: (no arguments)
+            The function output: True
+
+        Step 71  ·  MemoryModel.prefix_match   [memory-model]   serving/core/memory_model.py:623   (called by Scheduler.schedule_with_prefix)
+            This function: Probes the NPU cache and every pooled tier for the request's cached prefix, assigning each segment to the shallowest tier that still holds it.
+            The input to this function is: req=<Request id=0>
+            The function output: None
+
+            Step 72  ·  RadixCache.match_prefix   [prefix-cache]   serving/core/radix_tree.py:237   (called by MemoryModel.prefix_match)
+                This function: Find the matching prefix from the radix tree.
+                The input to this function is: key=<list of 10 items, e.g. 1>
+                The function output: <MatchResult of 2 items, e.g. <TreeNode id=0>>
+
+                Step 73  ·  RadixCache._match_prefix_helper   [prefix-cache]   serving/core/radix_tree.py:438   (called by RadixCache.match_prefix)
+                    This function: (no docstring — inspect the source for details)
+                    The input to this function is: node=<TreeNode id=0>, key=<list of 10 items, e.g. 1>
+                    The function output: <tuple of 2 items, e.g. 0>
+
+        Step 74  ·  MemoryModel.lock_prefix   [memory-model]   serving/core/memory_model.py:435   (called by Scheduler.schedule_with_prefix)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: req=<Request id=0>, device=<Device name='NPU'>
+            The function output: None
+
+            Step 75  ·  RadixCache.inc_lock_ref   [prefix-cache]   serving/core/radix_tree.py:391   (called by MemoryModel.lock_prefix)
+                This function: (no docstring — inspect the source for details)
+                The input to this function is: node=<TreeNode id=0>
+                The function output: 0
+
+        Step 76  ·  MemoryModel.avail_size   [memory-model]   serving/core/memory_model.py:398   (called by Scheduler.schedule_with_prefix)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: device=<Device name='NPU'>
+            The function output: 87018692608
+
+            Step 77  ·  RadixCache.avail_size   [prefix-cache]   serving/core/radix_tree.py:224   (called by MemoryModel.avail_size)
+                This function: (no docstring — inspect the source for details)
+                The input to this function is: (no arguments)
+                The function output: 87018692608
+
+                Step 78  ·  RadixCache.total_memory_usage   [prefix-cache]   serving/core/radix_tree.py:174   (called by RadixCache.avail_size)
+                    This function: (no docstring — inspect the source for details)
+                    The input to this function is: (no arguments)
+                    The function output: 0
+
+                    Step 79  ·  RadixCache.total_size   [prefix-cache]   serving/core/radix_tree.py:423   (called by RadixCache.total_memory_usage)
+                        This function: (no docstring — inspect the source for details)
+                        The input to this function is: (no arguments)
+                        The function output: 0
+
+                        Step 80  ·  RadixCache._total_size_helper   [prefix-cache]   serving/core/radix_tree.py:427   (called by RadixCache.total_size)
+                            This function: (no docstring — inspect the source for details)
+                            The input to this function is: (no arguments)
+                            The function output: 0
+
+        Step 81  ·  MemoryModel.evictable_size   [memory-model]   serving/core/memory_model.py:423   (called by Scheduler.schedule_with_prefix)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: device=<Device name='NPU'>
+            The function output: 0
+
+            Step 82  ·  RadixCache.evictable_size   [prefix-cache]   serving/core/radix_tree.py:415   (called by MemoryModel.evictable_size)
+                This function: (no docstring — inspect the source for details)
+                The input to this function is: (no arguments)
+                The function output: 0
+
+        Step 83  ·  MemoryModel.get_block_kv   [memory-model]   serving/core/memory_model.py:209   (called by Scheduler.schedule_with_prefix)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: batch_req=<list of 1 items, e.g. <Request id=0>>, batch_len=1, scheduled_tokens=<dict of 1 items, keys=['0']>
+            The function output: 2097152
+
+        Step 84  ·  MemoryModel.get_total_kv   [memory-model]   serving/core/memory_model.py:196   (called by Scheduler.schedule_with_prefix)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: req=<Request id=0>
+            The function output: 0
+
+        Step 85  ·  Request.set_que_delay   [request]   serving/core/request.py:66   (called by Scheduler.schedule_with_prefix)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: current=46926808
+            The function output: None
+
+        Step 86  ·  Scheduler.get_batch_id   [scheduler]   serving/core/scheduler.py:862   (called by Scheduler.schedule_with_prefix)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: (no arguments)
+            The function output: 0
+
+        Step 87  ·  Batch.__init__   [request]   serving/core/request.py:82   (called by Scheduler.schedule_with_prefix)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: batch_id=0, model='meta-llama/Llama-3.1-8B', total_len=10, kv_len=0, q_list=<list of 1 items, e.g. 10>, k_list=<list of 1 items, e.g. 0>, num_prefill=1, num_decode=0, prefill_q_list=<list of 1 items, e.g. 10>, prefill_k_list=<list of 1 items, e.g. 0>, decode_k_list=<list of 0 items>, batch_time=46926808, kv_size=2097152, evict=0, load=0, tier_loads=<list of 0 items>
+            The function output: None
+
+Step 88  ·  generate_trace   [trace-gen]   serving/core/trace_generator.py:1448   (called by (top level))
+    This function: Turns one scheduled Batch into a per-layer text trace (including kv_evict and deep-tier reload MEM rows).
+    The input to this function is: batch=<Batch batch_id=0>, hardware='RTXPRO6000', tp_size=1, pp_size=1, local_ep=1, ep_total=1, pd_type=None, node_id=0, instance_id=0, max_num_batched_tokens=2048, max_num_seqs=128, placement=<dict of 3 items, keys=['default', 'block', 'layer']>, block_mode_on=False, expert_routing_policy='BALANCED', enable_prefix_caching=True, enable_attn_offloading=False, power_model=None, pim_model=None, enable_sub_batch_interleaving=False, fp=16, dtype='float16', kv_cache_dtype='auto', tp_dim=None, ep_dim=None, dp_sum_total_len=0, enable_block_copy=True, inputs_root='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725'
+    The function output: None
+
+    Step 89  ·  resolve_variant   [trace-gen]   serving/core/trace_generator.py:52   (called by generate_trace)
+        This function: Compute the profiler's variant folder name from runtime dtype
+        The input to this function is: dtype='float16', kv_cache_dtype='auto', model_config=<dict of 24 items, keys=['architectures', 'attention_bias', 'attention_dropout', 'bos_token_id', 'eos_token_id', 'hidden_act']>
+        The function output: 'fp16'
+
+        Step 90  ·  _short_dtype   [trace-gen]   serving/core/trace_generator.py:46   (called by resolve_variant)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: d='float16'
+            The function output: 'fp16'
+
+    Step 91  ·  _synthesize_trace   [trace-gen]   serving/core/trace_generator.py:1294   (called by generate_trace)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: hardware='RTXPRO6000', model='meta-llama/Llama-3.1-8B', config=<dict of 24 items, keys=['architectures', 'attention_bias', 'attention_dropout', 'bos_token_id', 'eos_token_id', 'hidden_act']>, tp_size=1, pp_size=1, local_ep=1, ep_total=1, pd_type=None, node_id=0, instance_id=0, batch=<Batch batch_id=0>, max_len=2048, output_path='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725/trace/RTXPRO6000/meta-llama/Llama-3.1-8B/instance0_batch0.txt', placement=<dict of 3 items, keys=['default', 'block', 'layer']>, block_mode_on=False, gate=None, enable_attn_offloading=False, power_model=None, pim_model=None, fp=2, variant='fp16', kv_cache_dtype='auto', runtime_max_num_batched_tokens=2048, runtime_max_num_seqs=128, tp_dim=None, ep_dim=None, dp_sum_total_len=0
+        The function output: None
+
+        Step 92  ·  _build_trace_ctx   [trace-gen]   serving/core/trace_generator.py:829   (called by _synthesize_trace)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: hardware='RTXPRO6000', model='meta-llama/Llama-3.1-8B', config=<dict of 24 items, keys=['architectures', 'attention_bias', 'attention_dropout', 'bos_token_id', 'eos_token_id', 'hidden_act']>, tp_size=1, pp_size=1, local_ep=1, ep_total=1, node_id=0, fp=2, placement=<dict of 3 items, keys=['default', 'block', 'layer']>, gate=None, enable_attn_offloading=False, power_model=None, pim_model=None, pd_type=None, variant='fp16', kv_cache_dtype='auto', runtime_max_num_batched_tokens=2048, runtime_max_num_seqs=128, tp_dim=None, ep_dim=None, dp_sum_total_len=0
+            The function output: <TraceCtx node_id=0>
+
+            Step 93  ·  _load_perf_db   [trace-gen]   serving/core/trace_generator.py:326   (called by _build_trace_ctx)
+                This function: Load the per-category perf DB for a (hardware, model, variant)
+                The input to this function is: hardware='RTXPRO6000', model='meta-llama/Llama-3.1-8B', variant='fp16', tp_needed=<set of 1 items, e.g. 1>, model_type='llama'
+                The function output: <dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>
+
+                Step 94  ·  _variant_root   [trace-gen]   serving/core/trace_generator.py:79   (called by _load_perf_db)
+                    This function: (no docstring — inspect the source for details)
+                    The input to this function is: hardware='RTXPRO6000', model='meta-llama/Llama-3.1-8B', variant='fp16'
+                    The function output: '../profiler/perf/RTXPRO6000/meta-llama/Llama-3.1-8B/fp16'
+
+                Step 95  ·  _load_meta   [trace-gen]   serving/core/trace_generator.py:185   (called by _load_perf_db)
+                    This function: (no docstring — inspect the source for details)
+                    The input to this function is: variant_root='../profiler/perf/RTXPRO6000/meta-llama/Llama-3.1-8B/fp16'
+                    The function output: <dict of 16 items, keys=['profiler_version', 'vllm_version', 'cuda_version', 'gpu', 'hardware', 'profiled_at']>
+
+                Step 96  ·  _hydrate_skew_fit_tables   [trace-gen]   serving/core/trace_generator.py:195   (called by _load_perf_db)
+                    This function: Load each TP's per-bucket alpha table from CSV into the meta dict.
+                    The input to this function is: meta=<dict of 16 items, keys=['profiler_version', 'vllm_version', 'cuda_version', 'gpu', 'hardware', 'profiled_at']>, variant_root='../profiler/perf/RTXPRO6000/meta-llama/Llama-3.1-8B/fp16'
+                    The function output: None
+
+                    Step 97  ·  _read_skew_fit_csv   [trace-gen]   serving/core/trace_generator.py:230   (called by _hydrate_skew_fit_tables)
+                        This function: Return (alpha_by_bucket, n_by_bucket) keyed by the pipe-delimited
+                        The input to this function is: path='../profiler/perf/RTXPRO6000/meta-llama/Llama-3.1-8B/fp16/tp1/skew_fit.csv'
+                        The function output: <tuple of 2 items, e.g. <dict of 3982 items, keys=['pc=0|n<=128|sr<=15%|kvB<=16k|kp=0', 'pc=0|n<=128|sr<=15%|kvB<=1k|kp=0', 'pc=0|n<=128|sr<=15%|kvB<=4k|kp=0', 'pc=0|n<=128|sr<=40%|kvB<=16k|kp=0', 'pc=0|n<=128|sr<=40%|kvB<=1k|kp=0', 'pc=0|n<=128|sr<=40%|kvB<=4k|kp=0']>>
+
+                Step 98  ·  _load_architecture   [trace-gen]   serving/core/trace_generator.py:168   (called by _load_perf_db)
+                    This function: Load catalog + sequence from profiler/models/<model_type>.yaml.
+                    The input to this function is: model_type='llama'
+                    The function output: <dict of 2 items, keys=['sequence', 'catalog']>
+
+                    Step 99  ·  _arch_yaml_path   [trace-gen]   serving/core/trace_generator.py:65   (called by _load_architecture)
+                        This function: (no docstring — inspect the source for details)
+                        The input to this function is: model_type='llama'
+                        The function output: '/app/LLMServingSim/profiler/models/llama.yaml'
+
+                Step 100  ·  _read_category_csv   [trace-gen]   serving/core/trace_generator.py:255   (called by _load_perf_db)
+                    This function: Read a category CSV and return a dict per layer (for dense/per_sequence)
+                    The input to this function is: path='../profiler/perf/RTXPRO6000/meta-llama/Llama-3.1-8B/fp16/tp1/dense.csv', key_cols=None
+                    The function output: <DataFrame shape=(1368, 4)>
+
+                Step 101  ·  _build_1d_table   [trace-gen]   serving/core/trace_generator.py:270   (called by _load_perf_db)
+                    This function: Dense / per-sequence: per-layer sorted (keys, values) table.
+                    The input to this function is: df=<DataFrame shape=(1368, 4)>, layer_col='layer', key_col='tokens'
+                    The function output: <dict of 9 items, keys=['act_fn', 'down_proj', 'embedding', 'final_layernorm', 'gate_up_proj', 'layernorm']>
+
+                Step 102  ·  _build_attention_table   [trace-gen]   serving/core/trace_generator.py:282   (called by _load_perf_db)
+                    This function: 4D attention table indexed by (prefill_chunk, n_decode) slices,
+                    The input to this function is: df=<DataFrame shape=(19364, 6)>
+                    The function output: <dict of 4 items, keys=['pc_vals', 'nd_vals', 'pc_nd_pairs', 'slices']>
+
+                Step 103  ·  _check_tp_coverage   [trace-gen]   serving/core/trace_generator.py:393   (called by _load_perf_db)
+                    This function: (no docstring — inspect the source for details)
+                    The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, tp_needed=<set of 1 items, e.g. 1>, hardware='RTXPRO6000', model='meta-llama/Llama-3.1-8B', variant='fp16'
+                    The function output: None
+
+            Step 104  ·  warn_if_runtime_exceeds_profiled   [trace-gen]   serving/core/trace_generator.py:403   (called by _build_trace_ctx)
+                This function: Emit logger warnings when runtime batch limits exceed the values
+                The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, runtime_max_num_batched_tokens=2048, runtime_max_num_seqs=128
+                The function output: None
+
+        Step 105  ·  _build_batch_ctx   [trace-gen]   serving/core/trace_generator.py:869   (called by _synthesize_trace)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: batch=<Batch batch_id=0>, ctx=<TraceCtx node_id=0>
+            The function output: <BatchCtx object>
+
+        Step 106  ·  _emit_prologue   [trace-gen]   serving/core/trace_generator.py:1271   (called by _synthesize_trace)
+            This function: Emit prologue layers (typically just embedding). The first layer's
+            The input to this function is: ctx=<TraceCtx node_id=0>, bctx=<BatchCtx object>, f=<TextIOWrapper name='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725/trace/RTXPRO6000/meta-llama/Llama-3.1-8B/instance0_batch0.txt'>, batch_tag='NONE'
+            The function output: None
+
+            Step 107  ·  _sequence   [trace-gen]   serving/core/trace_generator.py:1111   (called by _emit_prologue)
+                This function: Fetch a sequence list from the architecture yaml, defaulting to
+                The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, section='prologue'
+                The function output: <list of 1 items, e.g. 'embedding'>
+
+            Step 108  ·  _emit_layer   [trace-gen]   serving/core/trace_generator.py:924   (called by _emit_prologue)
+                This function: Emit a single trace layer: lookup latency, compute sizes, format, track power.
+                The input to this function is: ctx=<TraceCtx node_id=0>, bctx=<BatchCtx object>, layer_name='embedding', lines=<list of 0 items>, power_acc=None, batch_tag='NONE', layer_num=None, comm_type='NONE', comm_size=0, input_loc='REMOTE:0', output_loc='LOCAL'
+                The function output: 5386
+
+                Step 109  ·  _layer_category   [trace-gen]   serving/core/trace_generator.py:913   (called by _emit_layer)
+                    This function: Return which catalog category (dense/per_sequence/attention/moe)
+                    The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, layer_name='embedding'
+                    The function output: 'dense'
+
+                    Step 110  ·  _catalog_has   [trace-gen]   serving/core/trace_generator.py:820   (called by _layer_category)
+                        This function: (no docstring — inspect the source for details)
+                        The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, category='per_sequence', name='embedding'
+                        The function output: False
+
+                Step 111  ·  _lookup_dense   [trace-gen]   serving/core/trace_generator.py:508   (called by _emit_layer)
+                    This function: (no docstring — inspect the source for details)
+                    The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, name='embedding', tp=1, tokens=10
+                    The function output: 5386
+
+                    Step 112  ·  _effective_tp   [trace-gen]   serving/core/trace_generator.py:498   (called by _lookup_dense)
+                        This function: Layers marked ``tp_stable`` in the architecture yaml are profiled
+                        The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, category='dense', name='embedding', tp=1
+                        The function output: 1
+
+                        Step 113  ·  _tp_stable   [trace-gen]   serving/core/trace_generator.py:487   (called by _effective_tp)
+                            This function: Return True if the catalog marks this layer as TP-stable — i.e.
+                            The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, category='dense', name='embedding'
+                            The function output: False
+
+                    Step 114  ·  _tp_tables   [trace-gen]   serving/core/trace_generator.py:473   (called by _lookup_dense)
+                        This function: Fetch the category-table dict for a given TP degree, with a
+                        The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, tp=1
+                        The function output: <dict of 3 items, keys=['dense', 'per_sequence', 'attention']>
+
+                    Step 115  ·  _lookup_1d   [trace-gen]   serving/core/trace_generator.py:459   (called by _lookup_dense)
+                        This function: 1D interpolation on sorted (keys, values).
+                        The input to this function is: keys=<list of 152 items, e.g. 1>, values=<list of 152 items, e.g. 3147>, query=10
+                        The function output: 5386.0
+
+                        Step 116  ·  _lookup_bounds   [trace-gen]   serving/core/trace_generator.py:442   (called by _lookup_1d)
+                            This function: Binary search returning (lo_idx, hi_idx) bracket.
+                            The input to this function is: keys=<list of 152 items, e.g. 1>, query=10
+                            The function output: <tuple of 2 items, e.g. 9>
+
+                        Step 117  ·  _linear_interpolate   [trace-gen]   serving/core/trace_generator.py:434   (called by _lookup_1d)
+                            This function: Linear interpolation (or extrapolation).
+                            The input to this function is: x0=10, y0=5386, x1=11, y1=5589, query=10
+                            The function output: 5386.0
+
+                Step 118  ·  get_device   [config-builder]   serving/core/config_builder.py:824   (called by _emit_layer)
+                    This function: Resolve device with priority default → block → layer (layer overrides block).
+                    The input to this function is: placement=<dict of 3 items, keys=['default', 'block', 'layer']>, block_idx=None, layer_name='embedding', kind='weights'
+                    The function output: 'LOCAL'
+
+        Step 119  ·  _build_transformer_block   [trace-gen]   serving/core/trace_generator.py:1202   (called by _synthesize_trace)
+            This function: Build a complete transformer block. Returns (lines, PowerAccumulator).
+            The input to this function is: ctx=<TraceCtx node_id=0>, bctx=<BatchCtx object>, layer_num=0, batch_tag='NONE', batch_id_str='0'
+            The function output: <tuple of 2 items, e.g. <list of 9 items>>
+
+            Step 120  ·  _emit_pre_attn_layers   [trace-gen]   serving/core/trace_generator.py:1180   (called by _build_transformer_block)
+                This function: (no docstring — inspect the source for details)
+                The input to this function is: ctx=<TraceCtx node_id=0>, bctx=<BatchCtx object>, layer_num=0, lines=<list of 0 items>, power_acc=<PowerAccumulator object>, batch_tag='NONE'
+                The function output: None
+
+                Step 121  ·  _emit_sequence   [trace-gen]   serving/core/trace_generator.py:1144   (called by _emit_pre_attn_layers)
+                    This function: Walk a flat list of canonical layer names from the architecture
+                    The input to this function is: ctx=<TraceCtx node_id=0>, bctx=<BatchCtx object>, layer_num=0, layers=<list of 4 items, e.g. 'layernorm'>, lines=<list of 0 items>, power_acc=<PowerAccumulator object>, batch_tag='NONE'
+                    The function output: None
+
+                    Step 122  ·  _layer_available   [trace-gen]   serving/core/trace_generator.py:1123   (called by _emit_sequence)
+                        This function: Return True when the CSV-backed table has data for this layer at
+                        The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, tp=1, layer_name='layernorm'
+                        The function output: True
+
+                    Step 123  ·  _emit_npu_attention   [trace-gen]   serving/core/trace_generator.py:1008   (called by _emit_sequence)
+                        This function: Emit NPU attention (unified prefill+decode lookup).
+                        The input to this function is: ctx=<TraceCtx node_id=0>, bctx=<BatchCtx object>, lines=<list of 3 items, e.g. 'layernorm                     2416           LOCAL...(+131c)'>, power_acc=<PowerAccumulator object>, layer_num=0, batch_tag='NONE'
+                        The function output: None
+
+                        Step 124  ·  _lookup_attention_with_skew   [trace-gen]   serving/core/trace_generator.py:714   (called by _emit_layer)
+                            This function: Attention lookup with skew correction applied.
+                            The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, tp=1, prefill_chunk=10, kv_prefill=0, n_decode=0, kv_decode_mean=0, kv_decode_max=0, kv_decode_min=0
+                            The function output: 7985
+
+                            Step 125  ·  _lookup_attention   [trace-gen]   serving/core/trace_generator.py:759   (called by _lookup_attention_with_skew)
+                                This function: 4D log-linear interpolation on (prefill_chunk, kv_prefill,
+                                The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, tp=1, prefill_chunk=10, kv_prefill=0, n_decode=0, kv_decode=0
+                                The function output: 7985
+
+                                Step 126  ·  _axis_bracket   [trace-gen]   serving/core/trace_generator.py:529   (called by _lookup_attention)
+                                    This function: Return (lo_idx, hi_idx, t) for log-space interpolation on
+                                    The input to this function is: values=<list of 20 items, e.g. 0>, query=10
+                                    The function output: <tuple of 3 items, e.g. 0>
+
+                                Step 127  ·  _corner   [trace-gen]   serving/core/trace_generator.py:776   (called by _lookup_attention)
+                                    This function: (no docstring — inspect the source for details)
+                                    The input to this function is: pc=0, nd=0
+                                    The function output: 8352.0
+
+                                    Step 128  ·  _attn_slice_lookup   [trace-gen]   serving/core/trace_generator.py:561   (called by _corner)
+                                        This function: Bilinear (log on each axis) within a single (pc, nd) slice.
+                                        The input to this function is: tbl=<dict of 4 items, keys=['pc_vals', 'nd_vals', 'pc_nd_pairs', 'slices']>, pc=0, nd=0, kv_prefill=0, kv_decode=0
+                                        The function output: None
+
+                                    Step 129  ·  _row_lookup   [trace-gen]   serving/core/trace_generator.py:572   (called by _attn_slice_lookup)
+                                        This function: (no docstring — inspect the source for details)
+                                        The input to this function is: row=<dict of 2 items, keys=['keys', 'values']>
+                                        The function output: 8352.0
+
+            Step 130  ·  _emit_post_attn_layers   [trace-gen]   serving/core/trace_generator.py:1185   (called by _build_transformer_block)
+                This function: (no docstring — inspect the source for details)
+                The input to this function is: ctx=<TraceCtx node_id=0>, bctx=<BatchCtx object>, layer_num=0, lines=<list of 4 items, e.g. 'layernorm                     2416           LOCAL...(+131c)'>, power_acc=<PowerAccumulator object>, batch_id_str='0', batch_tag='NONE'
+                The function output: None
+
+                Step 131  ·  _tp_comm   [trace-gen]   serving/core/trace_generator.py:972   (called by _emit_sequence)
+                    This function: Compute TP communication size. Returns (comm_size, comm_type).
+                    The input to this function is: ctx=<TraceCtx node_id=0>, layer_name='o_proj', total_len=10, collective='ALLREDUCE'
+                    The function output: <tuple of 2 items, e.g. 0>
+
+                Step 132  ·  _with_dim   [trace-gen]   serving/core/trace_generator.py:980   (called by _emit_sequence)
+                    This function: Encode involved_dim into comm_type string: 'ALLREDUCE' + [T,F] -> 'ALLREDUCE:1,0'.
+                    The input to this function is: comm_type='NONE', involved_dim=None
+                    The function output: 'NONE'
+
+        Step 133  ·  PowerAccumulator.flush   [trace-gen]   serving/core/trace_generator.py:140   (called by _synthesize_trace)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: ctx=<TraceCtx node_id=0>, enable_attn_offloading=False
+            The function output: None
+
+        Step 134  ·  _emit_final_layers   [trace-gen]   serving/core/trace_generator.py:1232   (called by _synthesize_trace)
+            This function: Emit the architecture's head layers (final_layernorm, lm_head,
+            The input to this function is: ctx=<TraceCtx node_id=0>, bctx=<BatchCtx object>, f=<TextIOWrapper name='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725/trace/RTXPRO6000/meta-llama/Llama-3.1-8B/instance0_batch0.txt'>, batch_tag='NONE'
+            The function output: None
+
+            Step 135  ·  _lookup_per_sequence   [trace-gen]   serving/core/trace_generator.py:519   (called by _emit_layer)
+                This function: (no docstring — inspect the source for details)
+                The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, name='lm_head', tp=1, sequences=1
+                The function output: 714006
+
+        Step 136  ·  _emit_pp_pd_power   [trace-gen]   serving/core/trace_generator.py:1254   (called by _synthesize_trace)
+            This function: Emit pipeline parallelism and P/D sync power.
+            The input to this function is: ctx=<TraceCtx node_id=0>, bctx=<BatchCtx object>
+            The function output: None
+
+Step 137  ·  Controller.write_flush   [ASTRA-Sim-IPC]   serving/core/controller.py:47   (called by (top level))
+    This function: HANDS OFF TO the ASTRA-Sim co-process: writes the step signal to its stdin so it simulates this batch.
+    The input to this function is: p=<Popen object>, input='/app/LLMServingSim/astra-sim/inputs/runs/run_1783287406963211_3725/workload/RTXPRO6000/meta-llama/Llama-3.1-8B/instance0_batch0/llm'
+    The function output: None
+
+Step 138  ·  Scheduler.is_request_empty   [scheduler]   serving/core/scheduler.py:960   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: (no arguments)
+    The function output: False
+
+Step 139  ·  MemoryModel.cache_unfinished_req   [memory-model]   serving/core/memory_model.py:468   (called by Scheduler.add_done)
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: req=<Request id=0>, device=<Device name='NPU'>
+    The function output: None
+
+    Step 140  ·  RadixCache.cache_unfinished_req   [prefix-cache]   serving/core/radix_tree.py:286   (called by MemoryModel.cache_unfinished_req)
+        This function: Cache request when it is unfinished.
+        The input to this function is: req=<Request id=0>, update=True
+        The function output: <TreeNode id=0>
+
+        Step 141  ·  RadixCache.insert   [prefix-cache]   serving/core/radix_tree.py:267   (called by RadixCache.cache_unfinished_req)
+            This function: (no docstring — inspect the source for details)
+            The input to this function is: key=<list of 0 items>, value=None
+            The function output: 0
+
+            Step 142  ·  RadixCache._insert_helper   [prefix-cache]   serving/core/radix_tree.py:502   (called by RadixCache.insert)
+                This function: (no docstring — inspect the source for details)
+                The input to this function is: node=<TreeNode id=0>, key=<list of 0 items>
+                The function output: 0
+
+    Step 143  ·  RadixCache.dec_lock_ref   [prefix-cache]   serving/core/radix_tree.py:403   (called by MemoryModel.cache_unfinished_req)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: node=<TreeNode id=0>
+        The function output: 0
+
+    Step 144  ·  MemoryModel.apply_kv_cache_events   [memory-model]   serving/core/memory_model.py:700   (called by MemoryModel.cache_unfinished_req)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: (no arguments)
+        The function output: None
+
+        Step 145  ·  RadixCache.take_events   [prefix-cache]   serving/core/radix_tree.py:644   (called by MemoryModel.apply_kv_cache_events)
+            This function: Atomically takes all events and clears the queue.
+            The input to this function is: (no arguments)
+            The function output: <list of 1 items, e.g. <AllBlocksCleared object>>
+
+Step 146  ·  Request.set_ttft   [request]   serving/core/request.py:69   (called by Scheduler.add_done)
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: current=57935078
+    The function output: None
+
+Step 147  ·  Request.add_itl   [request]   serving/core/request.py:62   (called by Scheduler.add_done)
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: current=69082897
+    The function output: None
+
+Step 148  ·  RadixCache._record_store_event   [prefix-cache]   serving/core/radix_tree.py:589   (called by RadixCache._insert_helper)
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: node=<TreeNode id=1>
+    The function output: None
+
+Step 149  ·  _key_match_paged   [prefix-cache]   serving/core/radix_tree.py:118   (called by RadixCache._match_prefix_helper)
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: key0=<list of 16 items, e.g. 1>, key1=<list of 16 items, e.g. 1>, page_size=16
+    The function output: 16
+
+Step 150  ·  MemoryModel.allocate   [memory-model]   serving/core/memory_model.py:289   (called by MemoryModel.apply_kv_cache_events)
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: size=2097152, device=<Device name='NPU'>
+    The function output: None
+
+Step 151  ·  _skew_alpha   [trace-gen]   serving/core/trace_generator.py:661   (called by _lookup_attention_with_skew)
+    This function: Resolve alpha for a specific batch from the profile's
+    The input to this function is: perf_db=<dict of 7 items, keys=['meta', 'architecture', 'variant', 'hardware', 'model', 'available_tps']>, tp=1, pc=0, n=2, skew_rate=0.5, kv_big=38, kp=0
+    The function output: 0.1554
+
+    Step 152  ·  _resolve_skew_axes   [trace-gen]   serving/core/trace_generator.py:643   (called by _skew_alpha)
+        This function: Return the (bins, labels) axes used for key construction.
+        The input to this function is: fit_block=<dict of 3 items, keys=['enabled', 'bucket_axes', 'per_tp']>, tp_entry=<dict of 10 items, keys=['method', 'n_samples', 'alpha_default', 'bucket_table', 'rel_err_p50', 'rel_err_p90']>
+        The function output: <dict of 9 items, keys=['pc', 'n_bins', 'n_labels', 'skew_rate_bins', 'skew_rate_labels', 'kv_big_bins']>
+
+    Step 153  ·  _bucket_label   [trace-gen]   serving/core/trace_generator.py:634   (called by _skew_alpha)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: bins=<list of 10 items, e.g. 0>, labels=<list of 9 items, e.g. 'n<=2'>, val=2
+        The function output: 'n<=2'
+
+Step 154  ·  MemoryModel.cache_finished_req   [memory-model]   serving/core/memory_model.py:503   (called by Scheduler.add_done)
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: req=<Request id=0>, device=<Device name='NPU'>
+    The function output: None
+
+    Step 155  ·  RadixCache.cache_finished_req   [prefix-cache]   serving/core/radix_tree.py:271   (called by MemoryModel.cache_finished_req)
+        This function: Cache request when it finishes.
+        The input to this function is: req=<Request id=0>
+        The function output: None
+
+Step 156  ·  Request.add_latency   [request]   serving/core/request.py:53   (called by Scheduler.add_done)
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: end_time=830246523
+    The function output: None
+
+Step 157  ·  Router.notify_request_completed   [router]   serving/core/router.py:237   (called by (top level))
+    This function: Called when a request finishes. Releases the next sub-request in
+    The input to this function is: request_id=0, completion_time_ns=830246523
+    The function output: None
+
+Step 158  ·  RadixCache.format_prefix_info   [prefix-cache]   serving/core/radix_tree.py:324   (called by (top level))
+    This function: Return the prefix-cache hit suffix for per-iteration status
+    The input to this function is: (no arguments)
+    The function output: ', Prefix Cache Hit ratio 0.00 %, (0 / 32)'
+
+Step 159  ·  Router.has_pending_requests   [router]   serving/core/router.py:223   (called by (top level))
+    This function: Check if there are unrouted requests remaining.
+    The input to this function is: (no arguments)
+    The function output: False
+
+Step 160  ·  Router.has_deferred_sessions   [router]   serving/core/router.py:297   (called by (top level))
+    This function: Check if there are agentic sessions with unreleased sub-requests.
+    The input to this function is: (no arguments)
+    The function output: False
+
+Step 161  ·  MemoryModel.free_prefix_cache   [memory-model]   serving/core/memory_model.py:691   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: (no arguments)
+    The function output: None
+
+    Step 162  ·  MemoryModel.free   [memory-model]   serving/core/memory_model.py:323   (called by MemoryModel.free_prefix_cache)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: size=23068672, device=<Device name='NPU'>
+        The function output: None
+
+Step 163  ·  MemoryModel.free_weight   [memory-model]   serving/core/memory_model.py:261   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: (no arguments)
+    The function output: None
+
+Step 164  ·  MemoryModel.is_free   [memory-model]   serving/core/memory_model.py:275   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: (no arguments)
+    The function output: None
+
+Step 165  ·  print_rule   [logging]   serving/core/logger.py:362   (called by (top level))
+    This function: Draw a horizontal rule across the current terminal width,
+    The input to this function is: label='', style='sim.rule'
+    The function output: None
+
+Step 166  ·  Controller.check_end   [ASTRA-Sim-IPC]   serving/core/controller.py:32   (called by (top level))
+    This function: Checks ASTRA-Sim's output for the end-of-simulation marker.
+    The input to this function is: p=<Popen object>
+    The function output: <list of 6 items, e.g. ''>
+
+Step 167  ·  MemoryModel.tier_hit_report   [memory-model]   serving/core/memory_model.py:608   (called by (top level))
+    This function: (requested_tokens, {Device: hit_tokens}) for per-tier hit ratios.
+    The input to this function is: (no arguments)
+    The function output: <tuple of 2 items, e.g. 32>
+
+Step 168  ·  MemoryModel.reload_report   [memory-model]   serving/core/memory_model.py:612   (called by (top level))
+    This function: ({Device: reload_latency_ns}, {Device: reload_bytes}) for the metric.
+    The input to this function is: (no arguments)
+    The function output: <tuple of 2 items, e.g. <dict of 0 items, keys=[]>>
+
+Step 169  ·  _tier_usage_bytes   [orchestration]   serving/__main__.py:1068   (called by (top level))
+    This function: Per-Device (used_bytes, capacity_bytes), pool-aware (dedup shared pools).
+    The input to this function is: (no arguments)
+    The function output: <dict of 1 items, keys=['Device.NPU']>
+
+Step 170  ·  Scheduler.print_result   [scheduler]   serving/core/scheduler.py:921   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: (no arguments)
+    The function output: None
+
+    Step 171  ·  _render   [scheduler]   serving/core/scheduler.py:927   (called by Scheduler.print_result)
+        This function: (no docstring — inspect the source for details)
+        The input to this function is: title='Time to First Token', values=<list of 2 items, e.g. 11008270>, num_space=0
+        The function output: None
+
+Step 172  ·  Scheduler.save_output   [scheduler]   serving/core/scheduler.py:967   (called by (top level))
+    This function: (no docstring — inspect the source for details)
+    The input to this function is: output_file='outputs/trace_demo.csv', is_append=False
+    The function output: None
+
+Step 173  ·  save_output_text   [logging]   serving/core/logger.py:102   (called by (top level))
+    This function: Persist everything printed to the console so far as plain text.
+    The input to this function is: path='../outputs/trace_demo.txt'
+    The function output: None
+
+
+====================================================================================================
+INVENTORY — every wrapper function that ran (grouped by layer, with total call count)
+====================================================================================================
+
+[ASTRA-Sim-IPC]
+  called    133 time(s)   Controller.read_wait
+                          BLOCKS on the ASTRA-Sim co-process's stdout until it finishes simulating this step.
+  called    133 time(s)   Controller.parse_output
+                          Parses ASTRA-Sim's stdout line into the step's cycle count and advances the simulated clock.
+  called    133 time(s)   Controller.write_flush
+                          HANDS OFF TO the ASTRA-Sim co-process: writes the step signal to its stdin so it simulates this batch.
+  called      1 time(s)   Controller.__init__
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   Controller.check_end
+                          Checks ASTRA-Sim's output for the end-of-simulation marker.
+
+[config-builder]
+  called   1716 time(s)   get_device
+                          Resolve device with priority default → block → layer (layer overrides block).
+  called      4 time(s)   represent_flowstyle_list
+                          (no docstring — inspect the source for details)
+  called      3 time(s)   _mem_str
+                          (no docstring — inspect the source for details)
+  called      3 time(s)   _compute_network_dims
+                          Infer ASTRA-Sim topology dimensions from resolved instances.
+  called      3 time(s)   _ok
+                          Allow LOCAL when local offloading is disabled; else must be in allowed set.
+  called      3 time(s)   _norm
+                          Upper-case and ensure ':0' suffix if missing.
+  called      2 time(s)   _normalize_network_dim_values
+                          Normalize scalar-or-list network settings to one float per topology dim.
+  called      1 time(s)   build_cluster_config
+                          Parses the cluster JSON and WRITES the ASTRA-Sim input files (network.yml / system.json / memory_expansion.json, including the deep tiers).
+  called      1 time(s)   _prepare_input_config_paths
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   _resolve_parallelism
+                          Infer and validate tp_size, pp_size, ep_size from partial config.
+  called      1 time(s)   _resolve_dp_groups
+                          Validate DP groups and compute dp_group_size and ep_total for each instance.
+  called      1 time(s)   _sync_system_collective_dims
+                          Match system collective implementation arity to final topology dims.
+  called      1 time(s)   _create_network_config
+                          Create ASTRA-Sim network topology config.
+  called      1 time(s)   _validate_memory_config
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   _check_entry
+                          Validate one entry dict: may include weights/kv_loc/kv_evict_loc.
+
+[graph-gen(Chakra)]
+  called    133 time(s)   generate_graph
+                          Converts the text trace into a Chakra .et graph by spawning the chakra_converter subprocess.
+
+[logging]
+  called     32 time(s)   print_markup
+                          Print a line of Rich markup without any logging decoration.
+  called     25 time(s)   add
+                          (no docstring — inspect the source for details)
+  called     11 time(s)   print_rule
+                          Draw a horizontal rule across the current terminal width,
+  called      8 time(s)   _na
+                          (no docstring — inspect the source for details)
+  called      6 time(s)   get_logger
+                          Return a ``ComponentLoggerAdapter`` bound to this project's root.
+  called      6 time(s)   ComponentLoggerAdapter.__init__
+                          (no docstring — inspect the source for details)
+  called      6 time(s)   _yn
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   _inf0
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   configure_logger
+                          Initialize the project logger.
+  called      1 time(s)   _RichSimHandler.__init__
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   print_banner
+                          Render the startup banner — title, tagline, ASCII logo.
+  called      1 time(s)   _centered_logo
+                          Return a Rich renderable that centres the multi-line ASCII
+  called      1 time(s)   print_input_config
+                          Render the argparse-namespace configuration block used at startup.
+  called      1 time(s)   _pc
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   save_output_text
+                          Persist everything printed to the console so far as plain text.
+
+[memory-model]
+  called   1724 time(s)   calculate_sizes
+                          Calculate input, weight, and output tensor sizes for a given layer.
+  called    264 time(s)   MemoryModel.avail_size
+                          (no docstring — inspect the source for details)
+  called    264 time(s)   MemoryModel.get_block_kv
+                          (no docstring — inspect the source for details)
+  called    211 time(s)   MemoryModel.get_kv
+                          (no docstring — inspect the source for details)
+  called    176 time(s)   MemoryModel.apply_kv_cache_events
+                          (no docstring — inspect the source for details)
+  called    174 time(s)   MemoryModel.get_total_kv
+                          (no docstring — inspect the source for details)
+  called    174 time(s)   MemoryModel.cache_unfinished_req
+                          (no docstring — inspect the source for details)
+  called    132 time(s)   MemoryModel.evictable_size
+                          (no docstring — inspect the source for details)
+  called     11 time(s)   MemoryModel.allocate
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   MemoryModel.prefix_match
+                          Probes the NPU cache and every pooled tier for the request's cached prefix, assigning each segment to the shallowest tier that still holds it.
+  called      2 time(s)   MemoryModel.lock_prefix
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   MemoryModel.cache_finished_req
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   MemoryModel.__init__
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   MemoryModel.get_weight
+                          Per-GPU model weight in bytes.
+  called      1 time(s)   MemoryModel._get_weight_per_block
+                          Per-block weight: dense layers use TP, MoE experts use EP.
+  called      1 time(s)   MemoryModel.free_prefix_cache
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   MemoryModel.free
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   MemoryModel.free_weight
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   MemoryModel.is_free
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   MemoryModel.tier_hit_report
+                          (requested_tokens, {Device: hit_tokens}) for per-tier hit ratios.
+  called      1 time(s)   MemoryModel.reload_report
+                          ({Device: reload_latency_ns}, {Device: reload_bytes}) for the metric.
+
+[orchestration]
+  called      2 time(s)   _iter_raw_instances
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   _runtime_limit
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   _resolve_output_file
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   _load_cluster_config_for_overrides
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   _cluster_config_path
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   _build_instance_runtime_configs
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   _resolve_instance_dtype
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   _tier_usage_bytes
+                          Per-Device (used_bytes, capacity_bytes), pool-aware (dedup shared pools).
+
+[prefix-cache]
+  called   1156 time(s)   _key_match_paged
+                          (no docstring — inspect the source for details)
+  called    265 time(s)   RadixCache.total_memory_usage
+                          (no docstring — inspect the source for details)
+  called    265 time(s)   RadixCache.total_size
+                          (no docstring — inspect the source for details)
+  called    265 time(s)   RadixCache._total_size_helper
+                          (no docstring — inspect the source for details)
+  called    264 time(s)   RadixCache.avail_size
+                          (no docstring — inspect the source for details)
+  called    176 time(s)   RadixCache.match_prefix
+                          Find the matching prefix from the radix tree.
+  called    176 time(s)   RadixCache.inc_lock_ref
+                          (no docstring — inspect the source for details)
+  called    176 time(s)   RadixCache.insert
+                          (no docstring — inspect the source for details)
+  called    176 time(s)   RadixCache._insert_helper
+                          (no docstring — inspect the source for details)
+  called    176 time(s)   RadixCache.dec_lock_ref
+                          (no docstring — inspect the source for details)
+  called    176 time(s)   RadixCache.take_events
+                          Atomically takes all events and clears the queue.
+  called    174 time(s)   RadixCache.cache_unfinished_req
+                          Cache request when it is unfinished.
+  called    169 time(s)   RadixCache._match_prefix_helper
+                          (no docstring — inspect the source for details)
+  called    133 time(s)   RadixCache.evictable_size
+                          (no docstring — inspect the source for details)
+  called     12 time(s)   TreeNode.__init__
+                          (no docstring — inspect the source for details)
+  called     11 time(s)   RadixCache._record_store_event
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   RadixCache.cache_finished_req
+                          Cache request when it finishes.
+  called      1 time(s)   RadixCache.__init__
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   RadixCache.reset
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   RadixCache._record_all_cleared_event
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   RadixCache.format_prefix_info
+                          Return the prefix-cache hit suffix for per-iteration status
+
+[request]
+  called   2088 time(s)   Request.is_prefill
+                          Check if request is still in prefill phase (has tokens left to compute)
+  called    172 time(s)   Request.add_itl
+                          (no docstring — inspect the source for details)
+  called    132 time(s)   Batch.__init__
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   Request.__init__
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   Request.set_que_delay
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   Request.set_ttft
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   Request.add_latency
+                          (no docstring — inspect the source for details)
+
+[router]
+  called    133 time(s)   Router.route_arrived_requests
+                          Route requests that have arrived by current_time_ns to instances.
+  called      2 time(s)   Router._load_flat_request
+                          Load a single flat request into pending queue.
+  called      2 time(s)   Router._least_load_select
+                          vLLM-style least-loaded routing, normalized by instance capacity.
+  called      2 time(s)   Router._get_counter
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   Router._set_counter
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   Router.notify_request_completed
+                          Called when a request finishes. Releases the next sub-request in
+  called      1 time(s)   Router.__init__
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   Router.load_requests
+                          Load requests from dataset into pending queue (not yet routed).
+  called      1 time(s)   Router.get_first_arrival_time
+                          Return the first request's arrival time in ns, or 1 if no requests.
+  called      1 time(s)   Router.has_pending_requests
+                          Check if there are unrouted requests remaining.
+  called      1 time(s)   Router.has_deferred_sessions
+                          Check if there are agentic sessions with unreleased sub-requests.
+
+[run-paths]
+  called    532 time(s)   input_path
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   resolve_run_id
+                          Return a path-safe run id.
+  called      1 time(s)   build_run_paths
+                          (no docstring — inspect the source for details)
+
+[scheduler]
+  called    133 time(s)   Scheduler.add_done
+                          Post-step bookkeeping: mark finished requests and write computed prefixes through into every tier.
+  called    133 time(s)   Scheduler.schedule
+                          Runs one scheduling step for this instance (picks the next batch of requests to simulate).
+  called    133 time(s)   Scheduler.schedule_with_prefix
+                          Scheduling step WITH prefix caching: match cached prefixes, apply the token budget, evict from NPU, and build the Batch (+ tier reloads).
+  called    133 time(s)   Scheduler.is_request_empty
+                          (no docstring — inspect the source for details)
+  called    132 time(s)   Scheduler.get_batch_id
+                          (no docstring — inspect the source for details)
+  called      3 time(s)   _render
+                          (no docstring — inspect the source for details)
+  called      2 time(s)   Scheduler.add_request
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   Scheduler.__init__
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   Scheduler.print_result
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   Scheduler.save_output
+                          (no docstring — inspect the source for details)
+
+[trace-gen]
+  called  10032 time(s)   _catalog_has
+                          (no docstring — inspect the source for details)
+  called   4224 time(s)   PowerAccumulator.flush
+                          (no docstring — inspect the source for details)
+  called   2772 time(s)   _layer_category
+                          Return which catalog category (dense/per_sequence/attention/moe)
+  called   2640 time(s)   _effective_tp
+                          Layers marked ``tp_stable`` in the architecture yaml are profiled
+  called   2640 time(s)   _tp_stable
+                          Return True if the catalog marks this layer as TP-stable — i.e.
+  called   1757 time(s)   _tp_tables
+                          Fetch the category-table dict for a given TP degree, with a
+  called   1728 time(s)   _axis_bracket
+                          Return (lo_idx, hi_idx, t) for log-space interpolation on
+  called   1716 time(s)   _emit_layer
+                          Emit a single trace layer: lookup latency, compute sizes, format, track power.
+  called   1584 time(s)   _lookup_1d
+                          1D interpolation on sorted (keys, values).
+  called   1584 time(s)   _lookup_bounds
+                          Binary search returning (lo_idx, hi_idx) bracket.
+  called   1584 time(s)   _linear_interpolate
+                          Linear interpolation (or extrapolation).
+  called   1320 time(s)   _lookup_dense
+                          (no docstring — inspect the source for details)
+  called   1056 time(s)   _layer_available
+                          Return True when the CSV-backed table has data for this layer at
+  called    694 time(s)   _attn_slice_lookup
+                          Bilinear (log on each axis) within a single (pc, nd) slice.
+  called    692 time(s)   _corner
+                          (no docstring — inspect the source for details)
+  called    692 time(s)   _row_lookup
+                          (no docstring — inspect the source for details)
+  called    660 time(s)   _sequence
+                          Fetch a sequence list from the architecture yaml, defaulting to
+  called    396 time(s)   _emit_sequence
+                          Walk a flat list of canonical layer names from the architecture
+  called    264 time(s)   _tp_comm
+                          Compute TP communication size. Returns (comm_size, comm_type).
+  called    264 time(s)   _with_dim
+                          Encode involved_dim into comm_type string: 'ALLREDUCE' + [T,F] -> 'ALLREDUCE:1,0'.
+  called    264 time(s)   _lookup_per_sequence
+                          (no docstring — inspect the source for details)
+  called    173 time(s)   _lookup_attention
+                          4D log-linear interpolation on (prefill_chunk, kv_prefill,
+  called    164 time(s)   _bucket_label
+                          (no docstring — inspect the source for details)
+  called    132 time(s)   generate_trace
+                          Turns one scheduled Batch into a per-layer text trace (including kv_evict and deep-tier reload MEM rows).
+  called    132 time(s)   resolve_variant
+                          Compute the profiler's variant folder name from runtime dtype
+  called    132 time(s)   _short_dtype
+                          (no docstring — inspect the source for details)
+  called    132 time(s)   _synthesize_trace
+                          (no docstring — inspect the source for details)
+  called    132 time(s)   _build_trace_ctx
+                          (no docstring — inspect the source for details)
+  called    132 time(s)   _load_perf_db
+                          Load the per-category perf DB for a (hardware, model, variant)
+  called    132 time(s)   _check_tp_coverage
+                          (no docstring — inspect the source for details)
+  called    132 time(s)   warn_if_runtime_exceeds_profiled
+                          Emit logger warnings when runtime batch limits exceed the values
+  called    132 time(s)   _build_batch_ctx
+                          (no docstring — inspect the source for details)
+  called    132 time(s)   _emit_prologue
+                          Emit prologue layers (typically just embedding). The first layer's
+  called    132 time(s)   _build_transformer_block
+                          Build a complete transformer block. Returns (lines, PowerAccumulator).
+  called    132 time(s)   _emit_pre_attn_layers
+                          (no docstring — inspect the source for details)
+  called    132 time(s)   _emit_npu_attention
+                          Emit NPU attention (unified prefill+decode lookup).
+  called    132 time(s)   _lookup_attention_with_skew
+                          Attention lookup with skew correction applied.
+  called    132 time(s)   _emit_post_attn_layers
+                          (no docstring — inspect the source for details)
+  called    132 time(s)   _emit_final_layers
+                          Emit the architecture's head layers (final_layernorm, lm_head,
+  called    132 time(s)   _emit_pp_pd_power
+                          Emit pipeline parallelism and P/D sync power.
+  called     41 time(s)   _skew_alpha
+                          Resolve alpha for a specific batch from the profile's
+  called     41 time(s)   _resolve_skew_axes
+                          Return the (bins, labels) axes used for key construction.
+  called      8 time(s)   _read_category_csv
+                          Read a category CSV and return a dict per layer (for dense/per_sequence)
+  called      4 time(s)   _build_1d_table
+                          Dense / per-sequence: per-layer sorted (keys, values) table.
+  called      2 time(s)   _read_skew_fit_csv
+                          Return (alpha_by_bucket, n_by_bucket) keyed by the pipe-delimited
+  called      2 time(s)   _build_attention_table
+                          4D attention table indexed by (prefill_chunk, n_decode) slices,
+  called      1 time(s)   generate_event
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   _variant_root
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   _load_meta
+                          (no docstring — inspect the source for details)
+  called      1 time(s)   _hydrate_skew_fit_tables
+                          Load each TP's per-bucket alpha table from CSV into the meta dict.
+  called      1 time(s)   _load_architecture
+                          Load catalog + sequence from profiler/models/<model_type>.yaml.
+  called      1 time(s)   _arch_yaml_path
+                          (no docstring — inspect the source for details)
+
+[utils]
+  called  40261 time(s)   formatter
+                          (no docstring — inspect the source for details)
+  called   1860 time(s)   get_config
+                          (no docstring — inspect the source for details)
+  called    133 time(s)   header
+                          (no docstring — inspect the source for details)
+  called    133 time(s)   get_workload
+                          (no docstring — inspect the source for details)
+
+----------------------------------------------------------------------------------------------------
+173 distinct wrapper functions ran, 96699 total calls.
+[end of flow trace]

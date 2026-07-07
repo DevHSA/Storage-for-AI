@@ -1,0 +1,110 @@
+─────────────────────────────── LLMServingSim2.0 ───────────────────────────────
+  A Unified Simulator for Heterogeneous Hardware and Serving Techniques in LLM  
+────────────────────────────────────────────────────────────────────────────────
+      _    _    __  __ ___              _           ___ _       ___   __        
+     | |  | |  |  \/  / __| ___ _ ___ _(_)_ _  __ _/ __(_)_ __ |_  ) /  \       
+     | |__| |__| |\/| \__ \/ -_) '_\ V / | ' \/ _` \__ \ | '  \ / / | () |      
+     |____|____|_|  |_|___/\___|_|  \_/|_|_||_\__, |___/_|_|_|_/___(_)__/       
+                                              |___/                             
+────────────────────────────────────────────────────────────────────────────────
+                              Input configuration                               
+
+  • Cluster config             : configs/cluster/single_node_cxl_instance.json
+  • Run ID                     : run_1783198996813768_393
+  • ASTRA-Sim inputs root      : /app/LLMServingSim/astra-sim/inputs/runs/run_1783198996813768_393
+  • Dataset                    : workloads/example_trace.jsonl
+  • Max num seqs               : 128
+  • Max batched tokens         : 2048
+  • Block size (tokens)        : 16
+  • Request routing            : LOAD
+  • Expert routing             : BALANCED
+  • Prefix caching             : ENABLED
+  • Chunked prefill            : ENABLED
+  • Prefix caching scheme      : xPU-Only
+  • Centralized prefix caching : DISABLED
+  • Offload attention to PIM   : DISABLED
+  • Sub-batch interleaving     : DISABLED
+  • Prioritize prefill         : DISABLED
+  • Network backend            : analytical
+  • Log interval (s)           : 1.0
+  • Log level                  : WARNING
+────────────────────────────────────────────────────────────────────────────────
+▶ Starting simulation...
+
+[1.0s] Avg prompt throughput: 115.0 tokens/s, Avg generation throughput: 39.0 tokens/s
+        ├─Running Instance[0]: 10 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15330.51 MB (15.595 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 115)
+        └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+[2.0s] Avg prompt throughput: 5.0 tokens/s, Avg generation throughput: 87.0 tokens/s
+        ├─Running Instance[0]: 8 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15332.51 MB (15.597 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 120)
+        └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+[3.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 72.0 tokens/s
+        ├─Running Instance[0]: 8 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15346.51 MB (15.611 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 120)
+        └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+[4.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 71.0 tokens/s
+        ├─Running Instance[0]: 7 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15348.51 MB (15.613 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 120)
+        └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+[5.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 56.0 tokens/s
+        ├─Running Instance[0]: 7 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15360.51 MB (15.626 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 120)
+        └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+[6.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 63.0 tokens/s
+        ├─Running Instance[0]: 7 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15364.51 MB (15.630 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 120)
+        └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+[7.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 63.0 tokens/s
+        ├─Running Instance[0]: 7 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15376.51 MB (15.642 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 120)
+        └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+[8.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 54.0 tokens/s
+        ├─Running Instance[0]: 4 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15380.51 MB (15.646 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 120)
+        └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+[9.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 29.0 tokens/s
+        ├─Running Instance[0]: 3 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15384.51 MB (15.650 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 120)
+        └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+[10.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 27.0 tokens/s
+         ├─Running Instance[0]: 2 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15388.51 MB (15.654 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 120)
+         └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+[11.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s
+         ├─Running Instance[0]: 2 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15390.51 MB (15.656 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 120)
+         └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+[12.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 11.0 tokens/s
+         ├─Running Instance[0]: 1 reqs, Waiting: 0 reqs, Total # 1 NPUs, Each NPU Memory Usage 15390.51 MB (15.656 % Used), Prefix Cache Hit ratio 0.00 %, (0 / 120)
+         └─Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used 
+────────────────────────────────────────────────────────────────────────────────
+▶ Exiting simulation...
+
+────────────────────────────────────────────────────────────────────────────────
+▶ Simulation results...
+
+Total simulation time: 0h 0m 7.041s
+────────────────────────────── Throughput Results ──────────────────────────────
+Total requests:                                                     10
+Total clocks (ns):                                                  12113387362
+Total latency (s):                                                  12.113
+Total input tokens:                                                 120
+Total generated tokens:                                             591
+Request throughput (req/s):                                         0.83
+Average prompt throughput (tok/s):                                  9.91
+Average generation throughput (tok/s):                              48.79
+Total token throughput (tok/s):                                     58.70
+Throughput per 1.0 sec ([prompt_throughput], [gen_throughput]): [(115.0, 39.0), (5.0, 87.0), (0.0, 72.0), (0.0, 71.0), (0.0, 56.0), (0.0, 63.0), (0.0, 63.0), (0.0, 54.0), (0.0, 29.0), (0.0, 27.0), (0.0, 18.0), (0.0, 11.0)]
+────────────────────────────────────────────────────────────────────────────────
+────────────────────── Prefix Caching Results (per tier) ───────────────────────
+Total requested prompt tokens:                                      120
+Tier       Hit tokens    Hit %  Reload(ms)   Usage(MB)   Cap(GB)   % used
+NPU                 0    0.00%        0.00       74.00     81.04   0.089%
+Total prefix hit ratio (%):                                         0.00
+Total prefix-reload latency (ms):                                   0.000
+Reload latency as % of total sim time:                              0.000
+────────────────────────────────────────────────────────────────────────────────
+───────────────────────────────── Instance [0] ─────────────────────────────────
+───────────────────────────── Time to First Token ──────────────────────────────
+Mean TTFT (ms):                                                     135.77
+Median TTFT (ms):                                                   136.53
+P99 TTFT (ms):                                                      157.67
+─────────────────── Time per Output Token (excl. 1st token) ────────────────────
+Mean TPOT (ms):                                                     112.77
+Median TPOT (ms):                                                   112.77
+P99 TPOT (ms):                                                      112.78
+───────────────────────────── Inter-token Latency ──────────────────────────────
+Mean ITL (ms) :                                                     112.77
+Median ITL (ms) :                                                   112.77
+P99 ITL (ms) :                                                      112.79
+────────────────────────────────────────────────────────────────────────────────

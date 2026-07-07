@@ -1,0 +1,3 @@
+instance id,request id,model,input,output,arrival,end_time,latency,queuing_delay,TTFT,TPOT,ITL
+0,0,meta-llama/Llama-3.1-8B,512,4,0,57731447,57731447,1,23876516,11284977,"[11284881, 11284977, 11285073]"
+1,1,meta-llama/Llama-3.1-8B,520,4,200000000,247525721,47525721,731447,13668454,11285755,"[11285649, 11285745, 11285873]"

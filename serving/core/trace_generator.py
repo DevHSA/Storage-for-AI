@@ -1520,29 +1520,34 @@ def generate_trace(batch, hardware, tp_size, pp_size, local_ep, ep_total, pd_typ
     # vllm: open output txt file and add load, evict mem
     mem = []
     if load_size != 0:
-        load = ["kv_load", '0', 'LOCAL', '0', get_device(placement, None, None, 'kv_evict_loc'), str(load_size), 'LOCAL', '0', 'NONE', '0', 'NONE']
+        load = ["kv_load", '0', 'LOCAL', '0', get_device(placement, None, None, 'kv_evict_loc'), str(int(load_size)), 'LOCAL', '0', 'NONE', '0', 'NONE']
         mem.append(load)
         if power_model is not None:
             power_model.add_dram_energy_consumption(node_id, load_size)
     if evict_size != 0:
-        evict = ["kv_evict", '0', 'LOCAL', '0', get_device(placement, None, None, 'kv_evict_loc'), str(evict_size), 'LOCAL', '0', 'NONE', '0', 'NONE']
+        evict = ["kv_evict", '0', 'LOCAL', '0', get_device(placement, None, None, 'kv_evict_loc'), str(int(evict_size)), 'LOCAL', '0', 'NONE', '0', 'NONE']
         mem.append(evict)
         if power_model is not None:
             power_model.add_dram_energy_consumption(node_id, evict_size)
 
-    # Deeper-tier prefix reloads (FLASH/ICMS/COLDSTORE): the Python wrapper has
-    # already computed each tier's access latency (ns). Inject it as a plain
-    # compute node (all LOCAL, no data movement) so the Chakra converter and
-    # ASTRA-Sim see an ordinary COMP node — no new memory-location type, no
-    # change to the converter/binary/inputs. These MUST be middle nodes (never
-    # the first/last layer): the converter builds a MEM_LOAD from the first
-    # layer's input_loc and a MEM_STORE from the last layer's output_loc, which
-    # require REMOTE (or configured local_mem) or ASTRA-Sim crashes. So we
-    # splice them in right after the first real layer, before the last.
+    # Deeper-tier prefix reloads (FLASH/JBOF/COLDSTORE) are emitted as REAL
+    # MEM_LOAD nodes so ASTRA-Sim times them (with contention) via its analytical
+    # memory model. The reload is a middle-layer row whose WEIGHT column points at
+    # the tier's memory location (<TIER>:<device_id>) with the reload byte count;
+    # the Chakra converter turns any middle row with a non-LOCAL weight_loc and
+    # weight_size>0 into a MEM_LOAD and wires it as a data-dep parent of the row's
+    # COMP node (so it sits on the request's critical path). comp_time is a
+    # negligible 1 ns anchor whose only purpose is to force the converter to
+    # create that COMP node (it skips comp nodes with comp_time==0) — the real
+    # reload latency comes from ASTRA-Sim timing the MEM_LOAD, so there is NO
+    # double-count. These MUST stay middle nodes (never first/last): the converter
+    # reads the first layer's input_loc / last layer's output_loc for its own
+    # MEM_LOAD/MEM_STORE, so we splice after the first real layer, before the last.
     tier_nodes = []
-    for label, comp_ns in (getattr(batch, 'tier_loads', None) or []):
-        if comp_ns and comp_ns > 0:
-            tier_nodes.append([label, str(int(round(comp_ns))), 'LOCAL', '0', 'LOCAL', '0', 'LOCAL', '0', 'NONE', '0', 'NONE'])
+    for tier_name, reload_bytes, device_id in (getattr(batch, 'tier_loads', None) or []):
+        if reload_bytes and reload_bytes > 0:
+            weight_loc = f"{tier_name.upper()}:{int(device_id)}"
+            tier_nodes.append([f"{tier_name.lower()}_load", '1', 'LOCAL', '0', weight_loc, str(int(reload_bytes)), 'LOCAL', '0', 'NONE', '0', 'NONE'])
 
     if power_model is not None:
         power_model.print_log(node_id)

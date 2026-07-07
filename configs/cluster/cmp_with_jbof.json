@@ -1,0 +1,23 @@
+{
+    "num_nodes": 1,
+    "link_bw": 16,
+    "link_latency": 20000,
+    "nodes": [
+        {
+            "num_instances": 1,
+            "cpu_mem":       { "mem_size": 0.25, "mem_bw": 200, "mem_latency": 80 },
+            "flash_mem":     { "mem_size": 0.25, "mem_bw": 8,   "mem_latency": 8000 },
+            "jbof_mem":      { "mem_size": 50,   "mem_bw": 32,  "mem_latency": 100000,  "link_bw": 64, "link_latency": 1000 },
+            "coldstore_mem": { "mem_size": 50,   "mem_bw": 4,   "mem_latency": 3000000, "link_bw": 16, "link_latency": 10000 },
+            "instances": [
+                {
+                    "model_name": "meta-llama/Llama-3.1-8B",
+                    "hardware": "RTXPRO6000",
+                    "npu_mem": { "mem_size": 96, "mem_bw": 1597, "mem_latency": 5 },
+                    "pd_type": null,
+                    "tp_size": 1
+                }
+            ]
+        }
+    ]
+}

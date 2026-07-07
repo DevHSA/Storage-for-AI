@@ -3,7 +3,7 @@
 Pattern:
   1. Request for prefix A          -> A is written through to every tier.
   2. `n_filler` distinct prefixes  -> fill the small tiers, evicting A out of
-                                      NPU/CPU/FLASH/ICMS (retained only in the
+                                      NPU/CPU/FLASH/JBOF (retained only in the
                                       large bottom tier).
   3. Request for prefix A again    -> hit served from the deepest tier that
                                       still holds A (demonstrates the Python-

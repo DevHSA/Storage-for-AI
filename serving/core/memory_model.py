@@ -13,7 +13,7 @@ class Device(Enum):
     CPU = 2
     CXL = 3
     FLASH = 4
-    ICMS = 5
+    JBOF = 5
     COLDSTORE = 6
 
 class MemoryModel():
@@ -99,7 +99,7 @@ class MemoryModel():
         self._cpu_cache_hashtolen = {}
         self._bytes_per_token = self.get_kv(1)  # bytes per token for kv cache
 
-        # -------------------- Deep spill tiers (FLASH / ICMS / COLDSTORE) --------------------
+        # -------------------- Deep spill tiers (FLASH / JBOF / COLDSTORE) --------------------
         # Python-timed tiers with no ASTRA-Sim representation. Each keeps its
         # own RadixCache and access-cost parameters; they are written through
         # whenever the CPU tier is written and probed (deepest-first) on a hit.
@@ -488,7 +488,7 @@ class MemoryModel():
                 self.npu_prefix_cache.pretty_print()
         elif device == Device.CPU or device == Device.CXL:
             self.second_tier_prefix_cache.cache_unfinished_req(req)
-            # Write through to deeper spill tiers (FLASH/ICMS/COLDSTORE).
+            # Write through to deeper spill tiers (FLASH/JBOF/COLDSTORE).
             for tier in self.deep_tiers:
                 tier['cache'].cache_unfinished_req(req, update=False)
             if self.logger.isEnabledFor(logging.DEBUG):
@@ -529,7 +529,7 @@ class MemoryModel():
                 self.npu_prefix_cache.pretty_print()
         elif device == Device.CPU or device == Device.CXL:
             self.second_tier_prefix_cache.cache_finished_req(req)
-            # Write through to deeper spill tiers (FLASH/ICMS/COLDSTORE).
+            # Write through to deeper spill tiers (FLASH/JBOF/COLDSTORE).
             for tier in self.deep_tiers:
                 tier['cache'].cache_finished_req(req)
             if self.logger.isEnabledFor(logging.DEBUG):
@@ -559,7 +559,7 @@ class MemoryModel():
 
         self.apply_kv_cache_events()
 
-    # -------------------- Deep spill tiers (FLASH/ICMS/COLDSTORE) --------------------
+    # -------------------- Deep spill tiers (FLASH/JBOF/COLDSTORE) --------------------
 
     def make_room_deep_tiers(self, total_size):
         """Evict LRU from each deep spill tier so it can hold ``total_size``
@@ -579,7 +579,7 @@ class MemoryModel():
         """Python-side reload latency (ns) for a hit served from a deep tier.
         ``mem_bw``/``link_bw`` are GB/s (1 GB/s == 1 byte/ns); latencies are ns.
         Node-local tiers (no link fields) pay only device access; remote tiers
-        (ICMS/COLDSTORE) add their network-path term."""
+        (JBOF/COLDSTORE) add their network-path term."""
         tier = self._deep_tier_by_device.get(device)
         if tier is None or load_bytes <= 0:
             return 0
@@ -641,7 +641,7 @@ class MemoryModel():
             req.storage_cache_hit = 0
             req.storage_last_node = None
         
-        # Deep spill tiers (FLASH/ICMS/COLDSTORE): probe each in order and
+        # Deep spill tiers (FLASH/JBOF/COLDSTORE): probe each in order and
         # record the incremental reload segment served by each tier (tokens not
         # already covered by a shallower/closer tier). Reload is charged to the
         # shallowest tier that still holds each segment.
@@ -738,6 +738,17 @@ class MemoryModel():
         if npu_byte_free > 0:
             self.free(npu_byte_free, Device.NPU)
         if npu_byte_alloc > 0:
+            # Admission safety: if caching these newly-computed blocks would push
+            # NPU past capacity, evict unlocked LRU prefixes to make room (they
+            # survive in the deeper tiers) instead of raising. This mirrors the
+            # deep-reload make-room in scheduler.schedule_with_prefix and keeps a
+            # saturated NPU stable under heavy eviction churn (the case that let
+            # a large working set spill NPU->CPU->JBOF). It is a no-op when NPU
+            # has room, so runs that never fill NPU are unaffected. If everything
+            # is locked (a genuine over-commit), allocate() still raises as before.
+            deficit = (self.npu_used + npu_byte_alloc) - self.npu_mem
+            if deficit > 0:
+                self.evict_prefix_cache(deficit, Device.NPU)
             self.allocate(npu_byte_alloc, Device.NPU)
         # if npu_byte_free > 0:
         #     self.free(npu_byte_free, Device.NPU)

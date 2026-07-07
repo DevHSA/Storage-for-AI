@@ -440,7 +440,7 @@ def print_input_config(args: Any) -> None:
             "CPU": "xPU + CPU",
             "CXL": "xPU + CXL",
             "FLASH": "tiered, depth <= FLASH (config-driven)",
-            "ICMS": "tiered, depth <= ICMS (config-driven)",
+            "JBOF": "tiered, depth <= JBOF (config-driven)",
             "COLDSTORE": "tiered, depth <= COLDSTORE (config-driven)",
         }
         return chain.get(x, "None")

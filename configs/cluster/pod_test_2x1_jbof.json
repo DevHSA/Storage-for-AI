@@ -1,0 +1,87 @@
+{
+  "num_nodes": 2,
+  "link_bw": 100,
+  "link_latency": 3000,
+  "nodes": [
+    {
+      "num_instances": 1,
+      "cpu_mem": {
+        "mem_size": 2,
+        "mem_bw": 1000,
+        "mem_latency": 120
+      },
+      "flash_mem": {
+        "mem_size": 6,
+        "mem_bw": 14,
+        "mem_latency": 10000
+      },
+      "coldstore_mem": {
+        "mem_size": 2000,
+        "mem_bw": 4,
+        "mem_latency": 2000000,
+        "link_bw": 16,
+        "link_latency": 20000
+      },
+      "jbof_mem": {
+        "mem_size": 120,
+        "mem_bw": 64,
+        "mem_latency": 80000,
+        "link_bw": 100,
+        "link_latency": 3000
+      },
+      "instances": [
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 16,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "pd_type": null,
+          "tp_size": 1
+        }
+      ]
+    },
+    {
+      "num_instances": 1,
+      "cpu_mem": {
+        "mem_size": 2,
+        "mem_bw": 1000,
+        "mem_latency": 120
+      },
+      "flash_mem": {
+        "mem_size": 6,
+        "mem_bw": 14,
+        "mem_latency": 10000
+      },
+      "coldstore_mem": {
+        "mem_size": 2000,
+        "mem_bw": 4,
+        "mem_latency": 2000000,
+        "link_bw": 16,
+        "link_latency": 20000
+      },
+      "jbof_mem": {
+        "mem_size": 120,
+        "mem_bw": 64,
+        "mem_latency": 80000,
+        "link_bw": 100,
+        "link_latency": 3000
+      },
+      "instances": [
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 16,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "pd_type": null,
+          "tp_size": 1
+        }
+      ]
+    }
+  ]
+}
