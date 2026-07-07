@@ -625,6 +625,17 @@ self.allocate(npu_byte_alloc, Device.NPU)</pre>
 
   <!-- ============================================================ -->
   <h2 id="ref">9. Reference</h2>
+  <h3>Getting the code &amp; building</h3>
+  <p>The simulator lives in two repos: <code>DevHSA/Storage-for-AI</code> (the LLMServingSim frontend)
+  and its <code>astra-sim</code> submodule → <code>DevHSA/astra-sim-jbof</code> (a flattened, JBOF-enabled
+  ASTRA-Sim). Clone <b>recursively</b> so the backend comes along:</p>
+  <pre class="code">git clone --recursive https://github.com/DevHSA/Storage-for-AI.git
+cd Storage-for-AI
+bash scripts/compile.sh          <span class="cm"># builds the ASTRA-Sim analytical backend + installs the Chakra converter</span>
+<span class="cm"># if you forgot --recursive:  git submodule update --init --recursive</span>
+<span class="cm"># protobuf gencode/runtime mismatch on build?  pip3 install --upgrade protobuf</span></pre>
+  <p>Workload traces are <b>generated, not stored in git</b> (they run to hundreds of MB) — build them
+  with the generators below before a run.</p>
   <h3>Reproduce these runs</h3>
   <pre class="code"><span class="cm"># config: &lt;racks&gt; &lt;jbof|nojbof&gt; &lt;out.json&gt; &lt;gpus/rack&gt; [npu cpu jbof cold  GiB per GPU]</span>
 python configs/cluster/make_pod_prop_mini_config.py 1 jbof   c8_jbof.json   8  3.9 0.85 18.8 188
