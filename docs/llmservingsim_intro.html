@@ -164,6 +164,21 @@
   <figcaption>Small on one GPU, the advantage <b>jumps once a full rack shares one deep pool</b>
   (contention) and holds at pod scale. We build up to it run by run — §2 (1→8 GPU), §5 (rack), §7 (pod).</figcaption>
   </figure>
+
+  <h3>The four examples in this guide</h3>
+  <p>Every example uses the same mini model and the faithful Vera Rubin tier ratios (per-GPU
+  NPU 3.9 / CPU 0.85 / JBOF 18.8 / COLD 188 GiB, §5); only the GPU count and workload size change. All
+  numbers below are from real runs and are reused throughout the guide:</p>
+  <table>
+    <tr><th>Scale</th><th>Config</th><th>Workload</th><th>tok/s — JBOF vs no-JBOF</th><th>adv.</th><th>TTFT mean</th></tr>
+    <tr><td><b>1 GPU</b> · §2</td><td class="num">pod_prop_mini_1gpu_s_{jbof,nojbof}</td><td class="num">120 ctx</td><td class="num">151,431 vs 111,068</td><td class="num">1.4×</td><td class="num">453 ms</td></tr>
+    <tr><td><b>8 GPU</b> · §2</td><td class="num">pod_prop_mini_8gpu_{jbof,nojbof}</td><td class="num">450 ctx</td><td class="num">544,144 vs 235,881</td><td class="num">2.3×</td><td class="num">341 ms</td></tr>
+    <tr><td><b>72 GPU · 1 rack</b> · §5</td><td class="num">pod_prop_mini_72gpu_{jbof,nojbof}</td><td class="num">3,200 ctx</td><td class="num">2,270,119 vs 351,486</td><td class="num"><b>6.5×</b></td><td class="num">1,221 ms</td></tr>
+    <tr><td><b>144 GPU · 2 racks</b> · §7</td><td class="num">pod_prop_mini_2rack_{jbof,nojbof}</td><td class="num">6,000 ctx</td><td class="num">4,404,882 vs 703,592</td><td class="num">6.3×</td><td class="num">1,141 ms</td></tr>
+  </table>
+  <p style="color:var(--muted);font-size:13px">tok/s = total token throughput; "adv." = JBOF ÷ no-JBOF
+  (equal to the req/s ratio, since the workload is identical). Each row is expanded in its section.</p>
+
   <p>The rest of this guide is best read top to bottom: we <b>run something first</b> (§2), then explain
   the machinery (§3–4), then scale up (§5, §7) toward the memory-tier feature we added.</p>
 
@@ -271,6 +286,29 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
     context has been evicted from NPU/CPU but survives in the deep tier, so each reuse <b>reloads</b> it
     from JBOF (or, without JBOF, from the far slower COLDSTORE).</li>
   </ul>
+  <p><b>Prefill-heavy by design.</b> Each request is a long 2048-token prompt with only a 4-token output,
+  so the work is dominated by <b>prefill</b>, not decode. That is deliberate: prefix caching's payoff is on
+  the <em>prefill</em> path (reusing a prompt's KV skips recompute, and a deep-tier reload happens before
+  the first token). Tiny outputs keep decode minimal, so the tier effect shows up cleanly in TTFT while
+  TBT (decode) stays flat.</p>
+  <details><summary>Deep dive: the generator script &amp; its arguments</summary><div class="inner">
+    <pre class="code">python workloads/generators/make_rack_fill.py &lt;out.jsonl&gt; &lt;n_ctx&gt; &lt;ctx_len&gt; &lt;tail_len&gt; &lt;out_len&gt; &lt;gap_ms&gt;
+<span class="cm"># the 8-GPU example:</span>
+python workloads/generators/make_rack_fill.py workloads/pod_prop_8gpu.jsonl 450 2048 8 4 3000</pre>
+    <table>
+      <tr><th>Arg</th><th>Example</th><th>What it does</th></tr>
+      <tr><td class="num">out.jsonl</td><td>pod_prop_8gpu.jsonl</td><td>Output path for the generated trace.</td></tr>
+      <tr><td class="num">n_ctx</td><td>450</td><td>Number of <b>distinct</b> contexts — chosen so the working set overflows NPU+CPU into the deep tier (larger for more GPUs).</td></tr>
+      <tr><td class="num">ctx_len</td><td>2048</td><td>Prompt length per context. Long → prefill-heavy; this is also the KV reloaded on reuse.</td></tr>
+      <tr><td class="num">tail_len</td><td>8</td><td>New tokens appended on reuse, so it is a genuine "shared prefix + a little new" request.</td></tr>
+      <tr><td class="num">out_len</td><td>4</td><td>Tokens generated per request. Small → decode is minimal, isolating the prefill/tier effect.</td></tr>
+      <tr><td class="num">gap_ms</td><td>3000</td><td>Delay before phase 2, so phase-1 fill completes (and shallow tiers evict) before reuse starts.</td></tr>
+    </table>
+    <p><b>Phase 1</b> writes <code>n_ctx</code> distinct prompts at <code>arrival=0</code> (a saturating
+    burst); <b>Phase 2</b> re-sends each (oldest first) as <code>context + tail</code> at
+    <code>arrival=gap_ms</code>. Disjoint token-id ranges per context guarantee genuinely distinct KV, so
+    a reuse is a true cache hit and a miss is a true recompute/reload.</p>
+  </div></details>
 
   <h3><span class="step">2d</span>Reading the output</h3>
   <p>The run prints three blocks. First, <b>throughput</b>:</p>
@@ -468,6 +506,30 @@ jbof_load       1          LOCAL      0           JBOF:0      27493990     LOCAL
   <p>So a run on 72 of these GPUs <em>is</em> a Vera Rubin rack, with real per-tier timing — only the
   absolute capacities (and the model) are shrunk to fit a simulation.</p>
 
+  <h3>Where the bandwidth &amp; latency numbers come from</h3>
+  <p>Every tier block in the config JSON carries a <code>mem_bw</code>, a <code>mem_latency</code>, and —
+  for the pooled tiers — a <code>link_bw</code> and <code>link_latency</code>. These are the exact values
+  used and why each is a real Vera Rubin figure. In the reload formula, <code>mem_bw</code>/<code>link_bw</code>
+  are in <b>GB/s</b> (numerically = bytes/ns) and latencies are in <b>ns</b>.</p>
+  <table>
+    <tr><th>Tier · knob</th><th>Config value</th><th>Why this value (Vera Rubin)</th></tr>
+    <tr><td><span class="pill tag-npu">NPU</span> · mem_bw</td><td class="num">22000</td><td>Rubin HBM4 delivers ≈ 22 TB/s per GPU.</td></tr>
+    <tr><td>NPU · mem_latency</td><td class="num">10</td><td>HBM access ~10 ns — near-negligible; on-NPU cache hits are effectively free.</td></tr>
+    <tr><td><span class="pill tag-cpu">CPU</span> · mem_bw</td><td class="num">1000</td><td>Vera LPDDR5X ≈ 1 TB/s aggregate per GPU.</td></tr>
+    <tr><td>CPU · mem_latency</td><td class="num">120</td><td>LPDDR/DRAM access latency ~120 ns.</td></tr>
+    <tr><td><span class="pill tag-jbof">JBOF</span> · mem_bw</td><td class="num">64</td><td>Pooled NVMe-flash read bandwidth ~64 GB/s.</td></tr>
+    <tr><td>JBOF · mem_latency</td><td class="num">80000</td><td>Flash media access latency ~80 µs.</td></tr>
+    <tr><td>JBOF · link_bw</td><td class="num">100</td><td>BlueField-4 network path: 800 Gb/s = 100 GB/s.</td></tr>
+    <tr><td>JBOF · link_latency</td><td class="num">2000</td><td>RDMA round-trip over the Spectrum-X fabric ~2 µs.</td></tr>
+    <tr><td><span class="pill tag-cold">COLDSTORE</span> · mem_bw</td><td class="num">4</td><td>Network/object-storage read bandwidth ~4 GB/s.</td></tr>
+    <tr><td>COLDSTORE · mem_latency</td><td class="num">2000000</td><td>Network-storage access latency ~2 ms.</td></tr>
+    <tr><td>COLDSTORE · link_bw</td><td class="num">16</td><td>Storage-network link ~16 GB/s.</td></tr>
+    <tr><td>COLDSTORE · link_latency</td><td class="num">20000</td><td>Storage-network round-trip ~20 µs.</td></tr>
+  </table>
+  <p>Only <code>mem_size</code> (capacity) is scaled down; every bandwidth and latency above is the real
+  hardware figure — so the <em>timing</em> of each reload is faithful even though the capacities are shrunk.
+  This is what lets the simulation stand in for a real Vera Rubin rack.</p>
+
   <h3>The rack run (72 GPUs)</h3>
   <p>Scaling the §2 example to 72 GPUs (one full rack) with a larger workload so NPU + the per-rack CPU
   saturate and the reuse spills into the shared JBOF:</p>
@@ -492,6 +554,24 @@ jbof_load       1          LOCAL      0           JBOF:0      27493990     LOCAL
     balloons to 34 s and <b>TTFT p99 reaches ~34 s</b> (vs 2.7 s with JBOF, a 12.3× tail gap), dragging
     throughput to 171 vs 1,104 req/s (6.5×). With JBOF, TTFT stays ~1.2 s mean; TBT is identical in both.
     This is the headline argument for the pooled fast tier, on faithful Vera-Rubin-rate hardware.
+  </div>
+
+  <h3>Faithful check — NVIDIA's "up to 5× tokens/s" claim</h3>
+  <p>NVIDIA states this pooled-flash tier delivers <b>up to 5× higher tokens-per-second</b>. Our faithful
+  72-GPU (one-rack) simulation — real Vera Rubin bandwidths/latencies, heavy prefix reuse — reproduces
+  that order of magnitude:</p>
+  <table>
+    <tr><th>72 GPU (1 rack)</th><th>WITH JBOF</th><th>WITHOUT (COLDSTORE)</th><th>ratio</th></tr>
+    <tr><td>Total token throughput</td><td class="num">2,270,119 tok/s</td><td class="num">351,486 tok/s</td><td class="num"><b>6.5×</b></td></tr>
+    <tr><td>Request throughput</td><td class="num">1,104 req/s</td><td class="num">171 req/s</td><td class="num">6.5×</td></tr>
+  </table>
+  <div class="box insight">
+    <div class="t">Result vs the claim</div>
+    Our faithful rack sim shows <b>6.5× higher tokens-per-second</b> with the JBOF tier — corroborating,
+    and slightly exceeding, NVIDIA's "up to 5×". We land a little above 5× because our no-JBOF baseline
+    serves reuse from <b>COLDSTORE</b> (network storage, ~2 ms) — a worst-case fallback; a faster fallback
+    (e.g. local SSD) would land closer to 5×. Either way, on real Vera-Rubin-rate hardware the simulator
+    independently reproduces the claimed magnitude of the tier's benefit.
   </div>
 
   <!-- ============================================================ -->

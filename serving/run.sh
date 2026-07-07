@@ -15,6 +15,10 @@
 #       72 GPU (3200 ctx): JBOF 1104  vs 171   req/s (6.5x); TTFT p99 2.7s vs 33.8s (12.3x); reload 2.8s vs 34.4s
 #      144 GPU (6000 ctx): JBOF 2142  vs 342   req/s (6.3x); TTFT p99 2.5s vs 31.2s;        reload 5.2s vs 63.8s
 #     TBT identical WITH/WITHOUT at every scale -> tier changes PREFILL/TTFT, not decode.
+#     TOKENS/s (JBOF vs no-JBOF): 1G 151k/111k; 8G 544k/236k; 72G 2.27M/0.35M; 144G 4.40M/0.70M.
+#     NVIDIA claims "up to 5x higher tokens/s" for this tier -> faithful 72-GPU (1 rack) sim = 6.5x (brackets it).
+#     Config bw/latency are REAL Vera Rubin (NPU 22000GB/s@10ns; CPU 1000@120ns; JBOF 64@80us + link 100@2us;
+#     COLDSTORE 4@2ms + link 16@20us); only mem_size (capacity) is scaled down.
 #     gen: make_pod_prop_mini_config.py <racks> <jbof|nojbof> <out> <gpr> 3.9 0.85 18.8 188
 #          make_rack_fill.py <out.jsonl> <n_ctx> 2048 8 4 3000
 #     Active = the simple 8-GPU JBOF first-run (the doc's opening example).
