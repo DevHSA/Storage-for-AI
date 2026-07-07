@@ -41,7 +41,11 @@ python workloads/generators/make_rack_fill.py workloads/pod_prop_8gpu.jsonl 450 
 ./serving/run.sh
 ```
 
-**New to the simulator?** Open the guided walkthrough in
+**New to LLM serving concepts** (tokens, KV cache, prefill/decode, TP, batching)? Start with the
+**[`docs/llmservingsim_primer.html`](docs/llmservingsim_primer.html)** primer — it builds every concept
+from the ground up (with worked Llama-3.1-8B numbers) and ties it to this code.
+
+**Ready to run it?** Open the guided walkthrough in
 **[`docs/llmservingsim_intro.html`](docs/llmservingsim_intro.html)** (view it in a browser) — it
 starts from a 1-GPU run, explains the config file, the workload format, and the output metrics
 (TTFT / TBT), then scales up to a faithful Vera Rubin rack and pod.

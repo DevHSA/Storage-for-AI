@@ -101,6 +101,13 @@
 
   <!-- ============================================================ -->
   <h2 id="overview">1. Overview — the two brains</h2>
+  <div class="box note">
+    <div class="t">New to LLM serving?</div>
+    If terms like <em>tokens, KV cache, prefill/decode, TP, batch size</em> are fuzzy, read the companion
+    <b><a href="llmservingsim_primer.html">"LLM Serving from the Ground Up"</a></b> primer first — it
+    builds every concept from scratch (with worked numbers) and ties it to this codebase; then this guide
+    reads easily.
+  </div>
   <p class="lead">LLMServingSim answers "what if?" questions about serving giant models on hardware we
   may not have on the bench — new memory tiers, bigger racks, different caching — and returns
   throughput and latency <em>without</em> the real cluster.</p>

@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Serving from the Ground Up — LLMServingSim Primer</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1f2328; --muted:#57606a; --line:#d0d7de;
+    --accent:#0969da; --accent2:#1a7f37;
+    --code-bg:#f6f8fa; --code-border:#d0d7de;
+    --npu:#1a7f37; --cpu:#0969da; --flash:#8250df; --jbof:#bc4c00; --cold:#6e7781;
+    --note:#0969da; --insight:#1a7f37; --gotcha:#9a6700;
+    --maxw:900px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:16px;line-height:1.65;}
+  .layout{display:grid;grid-template-columns:290px minmax(0,1fr);gap:0;max-width:1270px;margin:0 auto;}
+  nav.toc{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;
+    border-right:1px solid var(--line);padding:24px 18px;font-size:14px;background:#fbfcfd;}
+  nav.toc h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px;}
+  nav.toc a{display:block;color:var(--fg);text-decoration:none;padding:4px 8px;border-radius:6px;margin:1px 0;}
+  nav.toc a:hover{background:#eaeef2;color:var(--accent)}
+  main{padding:34px 40px 120px;max-width:var(--maxw);}
+  h1{font-size:32px;line-height:1.2;margin:0 0 6px}
+  .subtitle{color:var(--muted);font-size:17px;margin:0 0 26px}
+  h2{font-size:24px;margin:46px 0 12px;padding-top:10px;border-top:1px solid var(--line)}
+  h3{font-size:18px;margin:26px 0 8px}
+  p{margin:12px 0}
+  code{font-family:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+    font-size:.88em;background:var(--code-bg);border:1px solid var(--code-border);border-radius:5px;padding:1px 5px;}
+  pre.code{font-family:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+    font-size:13px;line-height:1.5;background:var(--code-bg);border:1px solid var(--code-border);
+    border-left:4px solid var(--accent);border-radius:8px;padding:14px 16px;overflow-x:auto;margin:14px 0;}
+  pre.code .cm{color:#6a9955;font-style:italic}
+  .eq{background:#fff8e8;border:1px solid #eaddb0;border-radius:8px;padding:10px 14px;margin:14px 0;
+    font-family:"SF Mono",Consolas,monospace;font-size:14px;overflow-x:auto}
+  .cap{display:block;color:var(--muted);font-size:12.5px;margin:-8px 0 18px;font-family:monospace}
+  .box{border:1px solid var(--line);border-left-width:5px;border-radius:8px;padding:12px 16px;margin:16px 0;background:#fbfcfd}
+  .box .t{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+  .note{border-left-color:var(--note)} .note .t{color:var(--note)}
+  .insight{border-left-color:var(--insight)} .insight .t{color:var(--insight)}
+  .gotcha{border-left-color:var(--gotcha)} .gotcha .t{color:var(--gotcha)}
+  details{border:1px solid var(--line);border-radius:8px;margin:14px 0;background:#fbfcfd;overflow:hidden}
+  details>summary{cursor:pointer;padding:10px 14px;font-weight:600;font-size:14px;color:var(--accent);
+    list-style:none;user-select:none;background:#f6f8fa}
+  details>summary::before{content:"▸ ";color:var(--accent)}
+  details[open]>summary::before{content:"▾ "}
+  details .inner{padding:6px 16px 14px}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#f6f8fa;font-weight:600}
+  tr:nth-child(even){background:#fbfcfd}
+  .num{font-family:monospace}
+  figure{margin:20px 0;text-align:center}
+  figure svg{max-width:100%;height:auto}
+  figcaption{color:var(--muted);font-size:13px;margin-top:8px}
+  .lead{font-size:17px}
+  hr{border:0;border-top:1px solid var(--line);margin:30px 0}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:12px;font-weight:700;color:#fff}
+  .tag-npu{background:var(--npu)} .tag-cpu{background:var(--cpu)} .tag-jbof{background:var(--jbof)}
+  @media (max-width:900px){ .layout{grid-template-columns:1fr} nav.toc{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)} main{padding:24px 18px 80px} }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <a href="#intro">Who this is for</a>
+  <a href="#model">1. What is an LLM?</a>
+  <a href="#memory">2. Weights vs KV cache</a>
+  <a href="#prefill">3. Prefill vs decode</a>
+  <a href="#kv">4. The KV cache &amp; its size</a>
+  <a href="#batch">5. Sequences, batches, batching</a>
+  <a href="#parallel">6. Scaling across GPUs</a>
+  <a href="#simhw">7. "Model + hardware" in the sim</a>
+  <a href="#prefixcache">8. Prefix caching &amp; tiers</a>
+  <a href="#glossary">9. Glossary</a>
+</nav>
+
+<main>
+  <h1>LLM Serving from the Ground Up</h1>
+  <p class="subtitle">A plain-English primer for LLMServingSim: how an LLM is built, how it runs
+  (prefill &amp; decode), how big the KV cache is, and how every concept maps to our code — with worked
+  numbers for Llama-3.1-8B and its 4-layer copy.</p>
+
+  <div class="box note" id="intro">
+    <div class="t">Who this is for</div>
+    You've heard "tokens", "KV cache", "prefill/decode", "TP", "batch size" — but the details are fuzzy.
+    This primer builds each idea from scratch, gives the exact formula, then points at the line of
+    <em>our</em> code that implements it, with concrete numbers. It's the companion to the
+    <a href="llmservingsim_intro.html">main guide</a> (which covers the simulator's layers and the JBOF
+    memory-tier study) — read this first if the vocabulary is new.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="model">1. What is an LLM (and what are all those numbers)?</h2>
+  <p class="lead">A large language model is a stack of identical <b>transformer layers</b>. Text is cut
+  into <b>tokens</b> (word pieces); each token becomes a vector; the stack transforms those vectors; the
+  last layer predicts the next token. Generation repeats one token at a time.</p>
+
+  <figure>
+  <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12">
+    <rect x="20" y="115" width="90" height="34" rx="6" fill="#eaeef2" stroke="#57606a"/><text x="65" y="136" text-anchor="middle">token ids</text>
+    <rect x="120" y="115" width="90" height="34" rx="6" fill="#eaf3ff" stroke="#0969da"/><text x="165" y="132" text-anchor="middle">embedding</text><text x="165" y="145" text-anchor="middle" font-size="10">→ 4096-d vec</text>
+    <rect x="230" y="40" width="230" height="185" rx="8" fill="#eafaef" stroke="#1a7f37"/>
+    <text x="345" y="58" text-anchor="middle" font-weight="700" fill="#1a7f37">× 32 transformer layers</text>
+    <rect x="245" y="70" width="200" height="60" rx="6" fill="#fff" stroke="#1a7f37"/>
+    <text x="345" y="90" text-anchor="middle" font-size="11">Attention</text>
+    <text x="345" y="106" text-anchor="middle" font-size="10" fill="#57606a">32 Q heads, 8 KV heads</text>
+    <text x="345" y="120" text-anchor="middle" font-size="10" fill="#57606a">head_dim 128</text>
+    <rect x="245" y="140" width="200" height="70" rx="6" fill="#fff" stroke="#1a7f37"/>
+    <text x="345" y="162" text-anchor="middle" font-size="11">MLP / feed-forward</text>
+    <text x="345" y="178" text-anchor="middle" font-size="10" fill="#57606a">4096 → 14336 → 4096</text>
+    <rect x="480" y="115" width="90" height="34" rx="6" fill="#f3eafd" stroke="#8250df"/><text x="525" y="132" text-anchor="middle">lm_head</text><text x="525" y="145" text-anchor="middle" font-size="10">→ 128256</text>
+    <rect x="585" y="115" width="115" height="34" rx="6" fill="#eaeef2" stroke="#57606a"/><text x="642" y="132" text-anchor="middle" font-size="11">next-token</text><text x="642" y="145" text-anchor="middle" font-size="10">probabilities</text>
+    <defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#57606a"/></marker></defs>
+    <line x1="110" y1="132" x2="118" y2="132" stroke="#57606a" marker-end="url(#a)"/>
+    <line x1="210" y1="132" x2="228" y2="132" stroke="#57606a" marker-end="url(#a)"/>
+    <line x1="460" y1="132" x2="478" y2="132" stroke="#57606a" marker-end="url(#a)"/>
+    <line x1="570" y1="132" x2="583" y2="132" stroke="#57606a" marker-end="url(#a)"/>
+  </svg>
+  <figcaption>Diagram 1 — the shape of Llama-3.1-8B: token ids → embedding → 32 transformer layers
+  (each = attention + MLP) → lm_head → next-token probabilities.</figcaption>
+  </figure>
+
+  <p>Every dimension you'll see is just a size in that picture:</p>
+  <table>
+    <tr><th>Term</th><th>What it is</th><th>Llama-3.1-8B</th><th>mini4L</th></tr>
+    <tr><td><code>num_hidden_layers</code></td><td>how many transformer layers are stacked (the depth)</td><td class="num">32</td><td class="num">4</td></tr>
+    <tr><td><code>hidden_size</code></td><td>width of the vector carried between layers (per token)</td><td class="num">4096</td><td class="num">4096</td></tr>
+    <tr><td><code>num_attention_heads</code></td><td>parallel "attention" views per layer (Q heads)</td><td class="num">32</td><td class="num">32</td></tr>
+    <tr><td><code>num_key_value_heads</code></td><td>K/V heads — fewer than Q heads (this is <b>GQA</b>)</td><td class="num">8</td><td class="num">8</td></tr>
+    <tr><td><code>head_dim</code></td><td>width of one head = <code>hidden_size ÷ heads</code></td><td class="num">128</td><td class="num">128</td></tr>
+    <tr><td><code>intermediate_size</code></td><td>the MLP's inner width (expand then shrink)</td><td class="num">14336</td><td class="num">14336</td></tr>
+    <tr><td><code>vocab_size</code></td><td>number of possible tokens (embedding + lm_head width)</td><td class="num">128256</td><td class="num">128256</td></tr>
+    <tr><td>weight (fp16)</td><td>total parameters × 2 bytes (see §2)</td><td class="num">~14.96 GiB</td><td class="num">~3.58 GiB</td></tr>
+  </table>
+
+  <div class="box insight">
+    <div class="t">GQA — why there are only 8 KV heads, not 32</div>
+    Plain attention would keep a Key and Value for all 32 heads. <b>Grouped-Query Attention</b> shares
+    each K/V head across a group of Q heads — here 32 Q heads share 8 K/V heads (ratio 4). It cuts the
+    KV cache to <b>¼</b> with almost no quality loss. This is why the KV size below uses
+    <code>num_key_value_heads</code> (8), not <code>num_attention_heads</code> (32).
+  </div>
+
+  <details><summary>In our code</summary><div class="inner">
+    A "model" is a JSON file of exactly these fields. <code>get_config(name)</code> loads
+    <code>configs/model/&lt;name&gt;.json</code>:
+    <pre class="code"><span class="cm"># configs/model/meta-llama/Llama-3.1-8B.json</span>
+"hidden_size": 4096, "num_hidden_layers": 32, "num_attention_heads": 32,
+"num_key_value_heads": 8, "intermediate_size": 14336, "vocab_size": 128256</pre>
+    <span class="cap">serving/core/utils.py:61 get_config() · memory_model.py:40–47 reads n_layer, kv_head, head_dim, kv_dim=kv_head·head_dim</span>
+    The mini4L file is identical except <code>num_hidden_layers: 4</code> — a lightweight copy for fast
+    simulation (per-layer compute is the same, just replayed 4× instead of 32×).
+  </div></details>
+
+  <!-- ============================================================ -->
+  <h2 id="memory">2. The two things that live in GPU memory</h2>
+  <p>A GPU serving an LLM holds <b>two</b> big things:</p>
+  <ol>
+    <li><b>Weights</b> — the model's learned parameters. <b>Fixed size</b>, loaded once. For 8B in fp16
+    that's <b>~15 GB</b>; for mini4L, ~3.6 GB.</li>
+    <li><b>KV cache</b> — the per-conversation "memory" of tokens seen so far. <b>Grows</b> with every
+    token and every concurrent request. This is the star of §4.</li>
+  </ol>
+
+  <figure>
+  <svg viewBox="0 0 640 90" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12">
+    <rect x="20" y="25" width="600" height="40" rx="6" fill="#f6f8fa" stroke="#d0d7de"/>
+    <rect x="20" y="25" width="300" height="40" rx="6" fill="#f3eafd" stroke="#8250df"/><text x="170" y="50" text-anchor="middle">model weights (fixed, ~15 GB)</text>
+    <rect x="320" y="25" width="200" height="40" fill="#eafaef" stroke="#1a7f37"/><text x="420" y="50" text-anchor="middle">KV cache (grows)</text>
+    <rect x="520" y="25" width="100" height="40" rx="6" fill="#fff" stroke="#57606a"/><text x="570" y="50" text-anchor="middle" fill="#57606a">free</text>
+    <text x="320" y="18" text-anchor="middle" font-size="11" fill="#1a7f37">← this is what fills up as you serve more/longer requests</text>
+  </svg>
+  <figcaption>Diagram 2 — NPU (GPU) memory: weights are a fixed block; the KV cache eats the rest. When
+  the KV region fills, older entries must spill to a slower tier — the topic of the main guide.</figcaption>
+  </figure>
+
+  <div class="eq">NPU KV capacity  =  npu_mem  −  model_weight</div>
+  <p>So a bigger model leaves less room for KV. For the full 8B on a small NPU there's very little KV
+  headroom, which is exactly why our study uses the 4-layer mini4L (smaller weight → more KV room).</p>
+  <details><summary>In our code</summary><div class="inner">
+    <pre class="code"><span class="cm"># serving/core/memory_model.py</span>
+self.weight     = self.get_weight()          <span class="cm"># ~14.96 GiB for 8B (line ~57, 136-164)</span>
+self.mem_for_kv = self.npu_mem - self.weight <span class="cm"># KV region (line 65)</span></pre>
+    <span class="cap">get_weight() sums embedding + layers + lm_head (÷ TP); see §6.</span>
+  </div></details>
+
+  <!-- ============================================================ -->
+  <h2 id="prefill">3. How inference runs: prefill vs decode</h2>
+  <p>Serving one request has <b>two phases</b>, with very different behavior:</p>
+  <figure>
+  <svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12">
+    <text x="10" y="20" font-weight="700" fill="#1a7f37">PREFILL — read the whole prompt at once</text>
+    <rect x="20" y="30" width="330" height="30" rx="4" fill="#eafaef" stroke="#1a7f37"/>
+    <text x="185" y="49" text-anchor="middle">process all N prompt tokens in parallel → 1st output token</text>
+    <text x="20" y="76" font-size="11" fill="#57606a">compute-bound · high GPU utilization · sets TTFT</text>
+    <text x="10" y="112" font-weight="700" fill="#bc4c00">DECODE — one token at a time</text>
+    <rect x="20" y="122" width="40" height="26" rx="3" fill="#fdeee6" stroke="#bc4c00"/><text x="40" y="139" text-anchor="middle" font-size="10">tok 1</text>
+    <rect x="66" y="122" width="40" height="26" rx="3" fill="#fdeee6" stroke="#bc4c00"/><text x="86" y="139" text-anchor="middle" font-size="10">tok 2</text>
+    <rect x="112" y="122" width="40" height="26" rx="3" fill="#fdeee6" stroke="#bc4c00"/><text x="132" y="139" text-anchor="middle" font-size="10">tok 3</text>
+    <text x="160" y="139" font-size="14" fill="#bc4c00">· · ·</text>
+    <text x="20" y="168" font-size="11" fill="#57606a">each step re-reads the ENTIRE KV cache · memory-bound · sets TBT</text>
+    <path d="M40 148 C 40 175, 300 175, 300 60" fill="none" stroke="#bc4c00" stroke-dasharray="4,3"/>
+    <text x="200" y="195" font-size="10" fill="#bc4c00">every decode step attends to all prior tokens' KV</text>
+  </svg>
+  <figcaption>Diagram 3 — prefill processes the prompt in one parallel pass (→ first token, TTFT);
+  decode then emits tokens one by one, each reading the whole KV cache (→ TBT).</figcaption>
+  </figure>
+  <table>
+    <tr><th></th><th>Prefill</th><th>Decode</th></tr>
+    <tr><td>Processes</td><td>the whole prompt, in parallel</td><td>one new token per step</td></tr>
+    <tr><td>Bottleneck</td><td><b>compute</b> (lots of math)</td><td><b>memory bandwidth</b> (reads all KV)</td></tr>
+    <tr><td>Metric it drives</td><td><b>TTFT</b> (time to first token)</td><td><b>TBT / TPOT</b> (time per output token)</td></tr>
+  </table>
+  <p>This split is <em>why</em> our memory-tier study focuses on <b>TTFT</b>: reusing a cached prompt
+  prefix (or reloading it from a fast tier) shortens prefill → lower TTFT, while decode (TBT) is
+  unaffected. <b>TTFT</b> = arrival → first token; <b>TPOT</b> = (total − TTFT) ÷ (output−1);
+  <b>ITL</b> = the per-step decode latencies.</p>
+  <details><summary>In our code</summary><div class="inner">
+    A request is in prefill while it still has prompt tokens left to compute:
+    <pre class="code"><span class="cm"># serving/core/request.py:76</span>
+def is_prefill(self):  return self.num_computed_tokens &lt; self.original_input</pre>
+    The scheduler hands out a per-step token budget (<b>chunked prefill</b>: long prompts are split so
+    decode requests aren't starved), and records the metrics when a request finishes.
+    <span class="cap">scheduler.py:70–182 (STEP 1 budget / chunked prefill) · add_done set_ttft :771, add_itl :821 · request.py:60 TPOT</span>
+  </div></details>
+
+  <!-- ============================================================ -->
+  <h2 id="kv">4. The KV cache and exactly how big it is</h2>
+  <p class="lead">During attention, each token produces a <b>Key</b> and a <b>Value</b> vector at every
+  layer. To avoid recomputing them for every future token, they're <b>cached</b>. That cache is the KV
+  cache, and it grows by a fixed amount <em>per token</em>.</p>
+
+  <div class="eq">bytes per token  =  2  ×  (num_kv_heads × head_dim)  ×  num_layers  ×  bytes_per_element</div>
+  <p>Reading it left to right: <b>2</b> = one Key + one Value; <b>num_kv_heads × head_dim</b> = the size
+  of one token's K (and of its V) — call it <code>kv_dim</code>; <b>num_layers</b> = every layer keeps
+  its own KV; <b>bytes_per_element</b> = 2 for fp16/bf16 (or 1 for fp8).</p>
+
+  <figure>
+  <svg viewBox="0 0 700 120" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">
+    <rect x="15" y="40" width="70" height="40" rx="5" fill="#eafaef" stroke="#1a7f37"/><text x="50" y="58" text-anchor="middle" font-size="11">K &amp; V</text><text x="50" y="73" text-anchor="middle" font-size="16">2</text>
+    <text x="92" y="65" font-size="16">×</text>
+    <rect x="108" y="40" width="150" height="40" rx="5" fill="#eaf3ff" stroke="#0969da"/><text x="183" y="58" text-anchor="middle" font-size="11">kv_heads · head_dim</text><text x="183" y="73" text-anchor="middle" font-size="14">8·128 = 1024</text>
+    <text x="265" y="65" font-size="16">×</text>
+    <rect x="281" y="40" width="110" height="40" rx="5" fill="#fff8c5" stroke="#9a6700"/><text x="336" y="58" text-anchor="middle" font-size="11">layers</text><text x="336" y="73" text-anchor="middle" font-size="14">32</text>
+    <text x="398" y="65" font-size="16">×</text>
+    <rect x="414" y="40" width="100" height="40" rx="5" fill="#f3eafd" stroke="#8250df"/><text x="464" y="58" text-anchor="middle" font-size="11">bytes/elem</text><text x="464" y="73" text-anchor="middle" font-size="14">2</text>
+    <text x="521" y="65" font-size="16">=</text>
+    <rect x="537" y="40" width="150" height="40" rx="5" fill="#fdeee6" stroke="#bc4c00"/><text x="612" y="58" text-anchor="middle" font-size="11">bytes / token</text><text x="612" y="73" text-anchor="middle" font-size="14">131,072</text>
+  </svg>
+  <figcaption>Diagram 4 — the KV-per-token calculation for Llama-3.1-8B = <b>131,072 bytes ≈ 128 KB per
+  token</b>.</figcaption>
+  </figure>
+
+  <div class="box insight">
+    <div class="t">Worked numbers</div>
+    <b>Llama-3.1-8B</b>: kv_dim = 8 × 128 = 1024, layers = 32, fp16 → <code>2 × 1024 × 32 × 2 =
+    <b>131,072 B/token</b></code> (128 KB). A 2,048-token prompt = 268 MB of KV; a 4,096-token one ≈ 537 MB
+    — <em>for a single request</em>.<br>
+    <b>mini4L</b> (4 layers): <code>2 × 1024 × 4 × 2 = <b>16,384 B/token</b></code> (8× smaller — that's
+    the whole reason it's cheap to simulate).
+  </div>
+
+  <div class="eq">KV capacity (tokens)  =  (npu_mem − weight)  ÷  bytes_per_token</div>
+  <p>Example: an NPU with ~8 GB free after weights, at 131 KB/token, holds ≈ <b>61,000 tokens</b> of KV.
+  Serve 100 concurrent 2,000-token conversations and you need 100 × 2000 × 131 KB ≈ <b>26 GB</b> — more
+  than one GPU has, which is precisely why KV must spill to slower tiers (the main guide's story).</p>
+
+  <h3>Paging: the KV cache is allocated in blocks</h3>
+  <p>Rather than grow byte-by-byte, KV is allocated in fixed <b>blocks</b> of <code>--block-size</code>
+  tokens (default <b>16</b>), like OS memory pages (this is vLLM's PagedAttention). A 17-token sequence
+  uses 2 blocks. Paging avoids fragmentation and lets two requests that share a prefix share the same
+  blocks — the foundation of prefix caching (§8).</p>
+  <details><summary>In our code</summary><div class="inner">
+    <pre class="code"><span class="cm"># serving/core/memory_model.py:186 — the exact formula above, per GPU</span>
+def get_kv(self, seq):
+    return 2 * self.kv_dim * seq * self.n_layer * self.kv_fp // self.num_npus
+<span class="cm"># kv_dim = num_kv_heads·head_dim ; kv_fp = bytes/elem (2=fp16, 1=fp8) ; //num_npus = TP split (§6)</span></pre>
+    <span class="cap">memory_model.py:65 KV capacity = npu_mem − weight · :209 get_block_kv (block-granular alloc) · __main__.py:251 --block-size 16</span>
+  </div></details>
+
+  <!-- ============================================================ -->
+  <h2 id="batch">5. Sequences, batches, and continuous batching</h2>
+  <p>To serve many users at once, the engine processes several requests together each step.</p>
+  <ul>
+    <li><b>Sequence</b> — one request's token stream (its prompt, then its generated tokens).</li>
+    <li><b>Batch</b> — the set of sequences advanced together in one step. It can mix <em>prefill</em>
+    requests (still reading their prompt) and <em>decode</em> requests (emitting one token).</li>
+    <li><b><code>max_num_seqs</code></b> — the max number of concurrent sequences (the batch <em>width</em>).
+    It caps in-flight KV so the NPU isn't over-committed.</li>
+    <li><b><code>max_num_batched_tokens</code></b> — the max tokens processed in one step (the token
+    <em>budget</em>). Decode uses 1 token/request; a prefill can use many.</li>
+    <li><b>Continuous batching</b> (vLLM-style) — requests join and leave the batch <em>every step</em>,
+    instead of waiting for a whole batch to finish. This is what keeps GPUs busy under real traffic.</li>
+  </ul>
+  <div class="box note">
+    <div class="t">Connecting to the metrics</div>
+    Because prefill and decode are mixed in a batch, <code>max_num_batched_tokens</code> and
+    <code>max_num_seqs</code> together decide how much prefill vs decode happens per step — which is why
+    they matter for TTFT (prefill throughput) and TBT (decode cadence). Our examples use
+    <code>--max-num-seqs 8</code>.
+  </div>
+  <details><summary>In our code</summary><div class="inner">
+    Each simulation step, <code>schedule_base()</code> runs five steps — (1) hand out the token budget
+    (chunked prefill), (2) size the KV needed, (3) evict if it won't fit, (4) allocate, (5) assemble the
+    <code>Batch</code> (its <code>q_list</code>, prefill/decode counts). The main loop then routes new
+    arrivals, schedules, generates a trace, times it, and retires finished requests.
+    <span class="cap">scheduler.py:70–308 schedule_base STEP 1–5 · request.py:81 Batch · __main__.py main loop (route → schedule → generate_trace → time → add_done)</span>
+  </div></details>
+
+  <!-- ============================================================ -->
+  <h2 id="parallel">6. Scaling across GPUs (TP / PP / EP / DP)</h2>
+  <p>One GPU isn't enough for big models or high load, so the model/work is split across GPUs:</p>
+  <table>
+    <tr><th>Kind</th><th>What it splits</th><th>Effect on per-GPU weight</th><th>Effect on per-GPU KV</th></tr>
+    <tr><td><b>TP</b> tensor-parallel</td><td>each layer's matrices <em>and</em> the KV heads, within one forward pass</td><td>÷ TP</td><td><b>÷ TP</b></td></tr>
+    <tr><td><b>PP</b> pipeline</td><td>the <em>layers</em> across GPUs (GPU 0 does layers 0–k, etc.)</td><td>÷ PP (fewer layers each)</td><td>÷ PP (fewer layers each)</td></tr>
+    <tr><td><b>EP</b> expert-parallel</td><td>the experts of an MoE model</td><td>÷ EP (experts)</td><td>unchanged</td></tr>
+    <tr><td><b>DP</b> data-parallel</td><td>nothing — full model <em>replicated</em>, each copy takes different requests</td><td>unchanged</td><td>unchanged (own cache)</td></tr>
+  </table>
+  <p>The one that changes KV size is <b>TP</b>: with TP=2, the 8 KV heads are split 4-and-4, so each GPU
+  holds <b>half</b> the KV per token. That's the <code>// num_npus</code> in <code>get_kv</code>.</p>
+  <div class="box insight">
+    <div class="t">Why our numbers use the full KV per token</div>
+    Every JBOF example runs <b>TP = 1</b> (one GPU per model instance), so there's no KV division:
+    per-GPU KV/token = the full <b>131,072 B</b> (8B) or <b>16,384 B</b> (mini4L). If we used TP=2 those
+    would halve. (Racks/pods scale by adding independent instances, not by raising TP.)
+  </div>
+  <details><summary>In our code</summary><div class="inner">
+    <pre class="code"><span class="cm"># get_kv divides by num_npus (= TP degree for one instance):</span>
+2 * kv_dim * seq * n_layer * kv_fp // num_npus        <span class="cm"># memory_model.py:186</span>
+<span class="cm"># get_weight shrinks each block by TP and uses fewer blocks under PP:</span>
+weight = emb + _get_weight_per_block(tp,ep,fp) * (n_layer // pp) + lm_head   <span class="cm"># :136-184</span></pre>
+    <span class="cap">config_builder.py resolves tp_size/pp_size/ep_size; num_npus = tp_size × pp_size.</span>
+    Worked check: 8B weight at TP=1 ≈ 14.96 GiB; at TP=2 ≈ 7.48 GiB (halved) — confirming TP splits weight.
+  </div></details>
+
+  <!-- ============================================================ -->
+  <h2 id="simhw">7. How the simulator represents "model + hardware"</h2>
+  <p>Everything above is <em>sizes</em>. To get <em>timings</em>, the simulator combines two inputs:</p>
+  <ol>
+    <li><b>The model architecture</b> — the <code>configs/model/&lt;name&gt;.json</code> above (via
+    <code>get_config</code>). Drives weight and KV <em>sizes</em>.</li>
+    <li><b>Measured performance tables</b> — the <b>profiler</b> database under
+    <code>profiler/perf/&lt;hardware&gt;/&lt;model&gt;/&lt;dtype&gt;/tp&lt;N&gt;/</code>
+    (<code>dense.csv</code>, <code>attention.csv</code>, <code>per_sequence.csv</code>). These are real
+    per-operation latencies (in ns) captured by a vLLM-based profiler on actual hardware, keyed by
+    <b>hardware + model + dtype + TP</b>.</li>
+  </ol>
+  <p>The trace generator loads both, then <b>replays <code>num_hidden_layers</code> layers</b>, looking
+  up each operation's latency from the tables, to synthesize the per-batch trace that ASTRA-Sim times.
+  This is the "<em>model + hardware → per-operation latency</em>" link — and it's why the 4-layer mini4L
+  reuses the 8B per-layer timings, just 4× instead of 32×.</p>
+  <div class="box note">
+    <div class="t">This is the bridge to the main guide</div>
+    Sizes (this primer) + measured per-op latencies (the profiler) → a trace → <b>ASTRA-Sim</b> turns it
+    into cycles. That "two brains" pipeline (Python decides <em>what</em>, ASTRA-Sim computes <em>how
+    long</em>) is the subject of the <a href="llmservingsim_intro.html">main guide</a>.
+  </div>
+  <details><summary>In our code</summary><div class="inner">
+    <span class="cap">trace_generator.py:31 _PROFILER_ROOT · :326–374 _load_perf_db (reads dense/attention/per_sequence CSV + meta.yaml) · :508+ _lookup_dense / _lookup_attention · _synthesize_trace iterates num_hidden_layers · __main__.py generate_trace passes hardware+model_name.</span>
+    A real <code>dense.csv</code> row maps (layer, tokens) → ns; <code>attention.csv</code> is a 4-D
+    grid over (prefill chunk, prior KV, #decode, decode KV). The sim interpolates these for the actual
+    batch shape.
+  </div></details>
+
+  <!-- ============================================================ -->
+  <h2 id="prefixcache">8. Prefix caching &amp; the memory tiers (the bridge)</h2>
+  <p>Now the pieces connect. Many requests share a prompt <b>prefix</b> (a system prompt, a document).
+  Since that prefix's KV is identical, we can <b>reuse</b> it instead of recomputing prefill — a direct
+  TTFT win (§3). The KV is stored in a tree keyed by token blocks (§4's paging), so a shared prefix
+  shares blocks.</p>
+  <p>But the KV cache overflows the GPU (§4's capacity math), so reused prefixes are kept in a
+  <b>hierarchy of memory tiers</b> — NPU → CPU → FLASH → <span class="pill tag-jbof">JBOF</span> →
+  COLDSTORE — and a reuse is served from the shallowest tier that still holds it. When a fast pooled
+  tier (JBOF) holds it instead of slow network storage, TTFT stays low even at pod scale.</p>
+  <div class="box insight">
+    <div class="t">You now have the vocabulary for the main guide</div>
+    Head to <b><a href="llmservingsim_intro.html">the main guide</a></b> for the tiered-cache study:
+    how the tiers are configured (with real Vera Rubin bandwidths/latencies), how prefix caching and
+    eviction work in code, and the 1 → 8 → 72 → 144-GPU results (including JBOF's ~6.5× tokens/s,
+    bracketing NVIDIA's "up to 5×").
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="glossary">9. Glossary — every variable in one place</h2>
+  <table>
+    <tr><th>Symbol / knob</th><th>Meaning</th><th>Where</th></tr>
+    <tr><td class="num">hidden_size</td><td>per-token vector width (4096)</td><td>model config</td></tr>
+    <tr><td class="num">num_hidden_layers</td><td>transformer depth (32 / mini4L 4)</td><td>model config</td></tr>
+    <tr><td class="num">num_attention_heads</td><td>Q heads per layer (32)</td><td>model config</td></tr>
+    <tr><td class="num">num_key_value_heads</td><td>K/V heads (8) — GQA</td><td>model config</td></tr>
+    <tr><td class="num">head_dim</td><td>hidden_size ÷ heads (128)</td><td>derived</td></tr>
+    <tr><td class="num">kv_dim</td><td>num_kv_heads · head_dim (1024)</td><td>memory_model.py:47</td></tr>
+    <tr><td class="num">intermediate_size</td><td>MLP inner width (14336)</td><td>model config</td></tr>
+    <tr><td class="num">vocab_size</td><td>#tokens (128256)</td><td>model config</td></tr>
+    <tr><td class="num">kv_fp</td><td>bytes/KV element (2=fp16, 1=fp8)</td><td>memory_model.py:35</td></tr>
+    <tr><td class="num">weight</td><td>total params × bytes (8B ≈ 14.96 GiB)</td><td>get_weight :136</td></tr>
+    <tr><td class="num">bytes/token (KV)</td><td>2·kv_dim·layers·kv_fp (8B = 131072)</td><td>get_kv :186</td></tr>
+    <tr><td class="num">block_size</td><td>tokens per KV block (16)</td><td>--block-size</td></tr>
+    <tr><td class="num">sequence</td><td>one request's token stream</td><td>Request</td></tr>
+    <tr><td class="num">batch</td><td>sequences advanced together per step</td><td>Batch</td></tr>
+    <tr><td class="num">max_num_seqs</td><td>batch width (concurrent sequences)</td><td>--max-num-seqs</td></tr>
+    <tr><td class="num">max_num_batched_tokens</td><td>token budget per step</td><td>flag</td></tr>
+    <tr><td class="num">prefill / decode</td><td>prompt pass / one-token generation</td><td>is_prefill()</td></tr>
+    <tr><td class="num">TTFT / TPOT / ITL</td><td>1st-token / per-output-token / per-step latency</td><td>request.py</td></tr>
+    <tr><td class="num">TP / PP / EP / DP</td><td>tensor / pipeline / expert / data parallelism</td><td>config + memory_model</td></tr>
+    <tr><td class="num">num_npus</td><td>GPUs per instance = tp_size × pp_size</td><td>config_builder</td></tr>
+  </table>
+
+  <hr>
+  <p style="color:var(--muted);font-size:13px">Companion to the <a href="llmservingsim_intro.html">LLMServingSim
+  main guide</a>. Numbers are for Llama-3.1-8B (fp16) and its 4-layer copy; code references point at the
+  repo at the time of writing.</p>
+
+</main>
+</div>
+</body>
+</html>
