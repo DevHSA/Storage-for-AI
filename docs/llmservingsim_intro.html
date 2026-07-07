@@ -313,7 +313,23 @@ python workloads/generators/make_rack_fill.py workloads/pod_prop_8gpu.jsonl 450 
   <h3><span class="step">2d</span>Reading the output</h3>
   <p>The run prints three blocks. First, <b>throughput</b>:</p>
   <pre class="code">Total latency (s):                    3.401
-Request throughput (req/s):         264.66</pre>
+Total input tokens:                1846800
+Total generated tokens:               3600
+Request throughput (req/s):          264.66
+Total token throughput (tok/s):   544143.88</pre>
+  <div class="box note">
+    <div class="t">How throughput is computed</div>
+    <code>Total latency (s) = Total clocks (ns) / 1e9</code> — the final simulation-clock time (the sim
+    runs at 1&nbsp;GHz, so 1 clock = 1 ns). Then:
+    <ul style="margin:6px 0">
+      <li><code>Request throughput = requests ÷ Total latency</code></li>
+      <li><code>Total token throughput (tok/s) = (Total input tokens + Total generated tokens) ÷ Total latency</code></li>
+    </ul>
+    <b>Input tokens count the full prompt</b>, including reused prefix-hit tokens (this is <em>effective</em>
+    prompt throughput, matching vLLM). Worked example for this 8-GPU run:
+    <code>(1,846,800 + 3,600) ÷ 3.401 s ≈ 544,144 tok/s</code>. Since a JBOF vs no-JBOF pair runs the
+    <em>identical</em> workload (same token counts), the tok/s ratio equals the latency (and req/s) ratio.
+  </div>
   <p>Then a <b>per-tier prefix-cache table</b> — where the reused KV was found and what it cost:</p>
   <pre class="code">Tier       Hit tokens    Hit %  Reload(ms)   Usage(MB)   Cap(GB)   % used
 NPU                 0    0.00%        0.00     2560.00      2.54  98.301%
@@ -716,19 +732,48 @@ bash scripts/compile.sh          <span class="cm"># builds the ASTRA-Sim analyti
 <span class="cm"># protobuf gencode/runtime mismatch on build?  pip3 install --upgrade protobuf</span></pre>
   <p>Workload traces are <b>generated, not stored in git</b> (they run to hundreds of MB) — build them
   with the generators below before a run.</p>
-  <h3>Reproduce these runs</h3>
-  <pre class="code"><span class="cm"># config: &lt;racks&gt; &lt;jbof|nojbof&gt; &lt;out.json&gt; &lt;gpus/rack&gt; [npu cpu jbof cold  GiB per GPU]</span>
-python configs/cluster/make_pod_prop_mini_config.py 1 jbof   c8_jbof.json   8  3.9 0.85 18.8 188
-python configs/cluster/make_pod_prop_mini_config.py 1 nojbof c8_nojbof.json 8  3.9 0.85 18.8 188
-<span class="cm"># workload: &lt;out.jsonl&gt; &lt;n_ctx&gt; &lt;ctx_len&gt; &lt;tail&gt; &lt;out_len&gt; &lt;gap_ms&gt;</span>
-python workloads/generators/make_rack_fill.py workloads/w8.jsonl 450 2048 8 4 3000
-<span class="cm"># run WITH JBOF (full chain; reuse lands in JBOF). For the no-JBOF baseline,</span>
-<span class="cm"># swap the config to c8_nojbof.json (same flags) -&gt; reuse falls to COLDSTORE.</span>
-python -m serving --cluster-config c8_jbof.json --dtype float16 --block-size 16 \
-  --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
-  --max-num-seqs 8 --dataset workloads/w8.jsonl --output out8.csv</pre>
-  <p>For a rack use <code>72</code> GPUs/rack and a bigger <code>n_ctx</code>; for the pod use
-  <code>2</code>+ racks. The per-GPU cap args keep the faithful Vera Rubin ratios (§5).</p>
+  <h3>Reproduce the four examples — copy &amp; paste</h3>
+  <p>Run these <b>inside the container</b> (after <code>./scripts/docker-sim.sh</code> then
+  <code>./scripts/compile.sh</code>). Each example is 4 steps: generate the two configs (they're also
+  pre-committed, so this is optional), <b>generate the workload — REQUIRED, since traces are gitignored</b>,
+  then run WITH and WITHOUT JBOF. The run flags are identical everywhere; set them once:</p>
+  <pre class="code">FLAGS="--dtype float16 --block-size 16 --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE --max-num-seqs 8"</pre>
+
+  <p><b>Example 1 — 1 GPU</b> (config: 1 rack × 1 GPU):</p>
+  <pre class="code"><span class="cm"># configs (optional — already in the repo):</span>
+python configs/cluster/make_pod_prop_mini_config.py 1 jbof   configs/cluster/pod_prop_mini_1gpu_s_jbof.json   1 3.9 0.85 18.8 188
+python configs/cluster/make_pod_prop_mini_config.py 1 nojbof configs/cluster/pod_prop_mini_1gpu_s_nojbof.json 1 3.9 0.85 18.8 188
+<span class="cm"># workload (REQUIRED):</span>
+python workloads/generators/make_rack_fill.py workloads/pod_prop_1gpu.jsonl 120 2048 8 4 3000
+<span class="cm"># run (WITH then WITHOUT JBOF):</span>
+python -m serving --cluster-config configs/cluster/pod_prop_mini_1gpu_s_jbof.json   $FLAGS --dataset workloads/pod_prop_1gpu.jsonl --output outputs/pp_1gpu_jbof.csv
+python -m serving --cluster-config configs/cluster/pod_prop_mini_1gpu_s_nojbof.json $FLAGS --dataset workloads/pod_prop_1gpu.jsonl --output outputs/pp_1gpu_nojbof.csv</pre>
+
+  <p><b>Example 2 — 8 GPUs</b> (1 rack × 8):</p>
+  <pre class="code">python configs/cluster/make_pod_prop_mini_config.py 1 jbof   configs/cluster/pod_prop_mini_8gpu_jbof.json   8 3.9 0.85 18.8 188
+python configs/cluster/make_pod_prop_mini_config.py 1 nojbof configs/cluster/pod_prop_mini_8gpu_nojbof.json 8 3.9 0.85 18.8 188
+python workloads/generators/make_rack_fill.py workloads/pod_prop_8gpu.jsonl 450 2048 8 4 3000
+python -m serving --cluster-config configs/cluster/pod_prop_mini_8gpu_jbof.json   $FLAGS --dataset workloads/pod_prop_8gpu.jsonl --output outputs/pod_prop_8gpu_jbof.csv
+python -m serving --cluster-config configs/cluster/pod_prop_mini_8gpu_nojbof.json $FLAGS --dataset workloads/pod_prop_8gpu.jsonl --output outputs/pod_prop_8gpu_nojbof.csv</pre>
+
+  <p><b>Example 3 — 72 GPUs (1 rack)</b> — the NVIDIA-5× comparison run (heavy, ~20–30 min each):</p>
+  <pre class="code">python configs/cluster/make_pod_prop_mini_config.py 1 jbof   configs/cluster/pod_prop_mini_72gpu_jbof.json   72 3.9 0.85 18.8 188
+python configs/cluster/make_pod_prop_mini_config.py 1 nojbof configs/cluster/pod_prop_mini_72gpu_nojbof.json 72 3.9 0.85 18.8 188
+python workloads/generators/make_rack_fill.py workloads/pod_prop_72gpu.jsonl 3200 2048 8 4 3000
+python -m serving --cluster-config configs/cluster/pod_prop_mini_72gpu_jbof.json   $FLAGS --dataset workloads/pod_prop_72gpu.jsonl --output outputs/pod_prop_72gpu_jbof.csv
+python -m serving --cluster-config configs/cluster/pod_prop_mini_72gpu_nojbof.json $FLAGS --dataset workloads/pod_prop_72gpu.jsonl --output outputs/pod_prop_72gpu_nojbof.csv</pre>
+
+  <p><b>Example 4 — 144 GPUs (2 racks × 72)</b> — note the first arg is <code>2</code> racks (heavy, ~40–60 min each):</p>
+  <pre class="code">python configs/cluster/make_pod_prop_mini_config.py 2 jbof   configs/cluster/pod_prop_mini_2rack_jbof.json   72 3.9 0.85 18.8 188
+python configs/cluster/make_pod_prop_mini_config.py 2 nojbof configs/cluster/pod_prop_mini_2rack_nojbof.json 72 3.9 0.85 18.8 188
+python workloads/generators/make_rack_fill.py workloads/pod_prop_2rack.jsonl 6000 2048 8 4 3000
+python -m serving --cluster-config configs/cluster/pod_prop_mini_2rack_jbof.json   $FLAGS --dataset workloads/pod_prop_2rack.jsonl --output outputs/pod_prop_2rack_jbof.csv
+python -m serving --cluster-config configs/cluster/pod_prop_mini_2rack_nojbof.json $FLAGS --dataset workloads/pod_prop_2rack.jsonl --output outputs/pod_prop_2rack_nojbof.csv</pre>
+
+  <p>The number after the workload path is <code>n_ctx</code> — the count of distinct contexts
+  (<b>120 / 450 / 3,200 / 6,000</b> for 1 / 8 / 72 / 144 GPU). It grows with scale so the working set still
+  overflows NPU + CPU into the deep tier (the other generator args — <code>ctx_len 2048</code>,
+  <code>tail 8</code>, <code>out_len 4</code>, <code>gap 3000 ms</code> — stay fixed; see §2c).</p>
 
   <div class="box gotcha">
     <div class="t">Build note (protobuf)</div>
