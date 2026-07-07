@@ -21,17 +21,33 @@ LLMServingSim is a cycle-level simulator for LLM serving infrastructure. It pair
 
 ## Getting Started
 
+> **This fork (DevHSA)** adds a vendor-neutral **JBOF** pooled-flash KV-cache tier to the memory
+> hierarchy (**NPU → CPU → FLASH → JBOF → COLDSTORE**) and a cluster-wide **TTFT / TBT** latency
+> summary. The ASTRA-Sim backend carrying those changes lives in the
+> [`astra-sim-jbof`](https://github.com/DevHSA/astra-sim-jbof) submodule — so clone **recursively**.
+
 ```bash
-git clone --recurse-submodules https://github.com/casys-kaist/LLMServingSim.git
-cd LLMServingSim
+git clone --recursive https://github.com/DevHSA/Storage-for-AI.git
+cd Storage-for-AI
+# forgot --recursive?  ->  git submodule update --init --recursive
+
 ./scripts/docker-sim.sh           # launch the simulator container
-./scripts/compile.sh              # build ASTRA-Sim + Chakra
-./serving/run.sh                  # run the example simulations
+./scripts/compile.sh              # build ASTRA-Sim + install the Chakra converter
+                                  #   protobuf gencode/runtime mismatch? -> pip3 install --upgrade protobuf
+
+# workload traces are GENERATED (not stored in git); build one, then run the
+# active example in run.sh -- a simple 8-GPU JBOF run:
+python workloads/generators/make_rack_fill.py workloads/pod_prop_8gpu.jsonl 450 2048 8 4 3000
+./serving/run.sh
 ```
 
-For installation details, container choices, configuration layout, CLI
-flags, and the full set of example workloads, see the
-[documentation](https://llmservingsim.ai/docs/getting-started/overview).
+**New to the simulator?** Open the guided walkthrough in
+**[`docs/llmservingsim_intro.html`](docs/llmservingsim_intro.html)** (view it in a browser) — it
+starts from a 1-GPU run, explains the config file, the workload format, and the output metrics
+(TTFT / TBT), then scales up to a faithful Vera Rubin rack and pod.
+
+For the upstream simulator's installation details, container choices, CLI flags, and the full
+example set, see the [LLMServingSim docs](https://llmservingsim.ai/docs/getting-started/overview).
 
 ## Publications
 
