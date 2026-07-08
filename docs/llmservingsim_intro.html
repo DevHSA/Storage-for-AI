@@ -495,23 +495,104 @@ jbof_load       1          LOCAL      0           JBOF:0      27493990     LOCAL
   point of the tier work is to study that hardware, so the numbers in our configs are chosen to be
   <b>faithful</b> to it.</p>
 
-  <h3>The real Vera Rubin memory hierarchy (per GPU)</h3>
+  <h3>5.1 &nbsp;The real Vera Rubin memory hierarchy — with sources</h3>
+  <p>Every number below is either <b>announced</b> by NVIDIA (product page / developer blogs) or, where NVIDIA
+  has published nothing, <b>inferred</b> from the closest measured proxy — and each cell says which, with a
+  superscript link to the source in <a href="#refs">§5.5 References</a>. The one rule to remember:
+  <b>NVIDIA publishes capacities and bandwidths, but no access-latency figures for any Vera Rubin tier</b> —
+  so <em>every latency in this table is inferred</em>.</p>
   <table>
-    <tr><th>Tier</th><th>Real capacity</th><th>Real bandwidth</th><th>Real latency</th></tr>
-    <tr><td><span class="pill tag-npu">NPU</span> Rubin HBM4</td><td class="num">288 GB</td><td class="num">22 TB/s</td><td class="num">~10 ns</td></tr>
-    <tr><td><span class="pill tag-cpu">CPU</span> Vera LPDDR5X</td><td class="num">~750 GB</td><td class="num">~1.2 TB/s</td><td class="num">~120 ns</td></tr>
-    <tr><td><span class="pill tag-jbof">JBOF</span> pooled flash</td><td class="num">16 TB</td><td class="num">~64 GB/s</td><td class="num">~80 µs<br>+ BlueField 100 GB/s / ~2 µs</td></tr>
-    <tr><td><span class="pill tag-cold">COLDSTORE</span> network</td><td class="num">large</td><td class="num">~4 GB/s</td><td class="num">~2 ms</td></tr>
+    <tr>
+      <th>Tier</th><th>Real capacity</th><th>Real memory<br>bandwidth</th><th>Real memory<br>latency</th>
+      <th>Real link<br>bandwidth</th><th>Real link<br>latency</th>
+    </tr>
+    <tr>
+      <td><span class="pill tag-npu">NPU</span> Rubin HBM4</td>
+      <td class="num">288 GB / GPU<br>(20.7 TB / rack)<sup><a href="#r1">1</a></sup></td>
+      <td class="num">22 TB/s / GPU<br>(1,580 TB/s rack)<sup><a href="#r1">1</a>,<a href="#r2">2</a></sup></td>
+      <td class="num">~120–160 ns<br><i>inferred</i><sup><a href="#r13">13</a></sup></td>
+      <td class="num">NVLink 6:<br>3.6 TB/s / GPU<sup><a href="#r2">2</a></sup></td>
+      <td class="num">~1–2 µs hop<br><i>inferred</i><sup><a href="#r12">12</a></sup></td>
+    </tr>
+    <tr>
+      <td><span class="pill tag-cpu">CPU</span> Vera LPDDR5X</td>
+      <td class="num">1.5 TB / CPU<br>(54 TB / rack)<sup><a href="#r3">3</a></sup></td>
+      <td class="num">1.2 TB/s / CPU<sup><a href="#r3">3</a></sup></td>
+      <td class="num">~110–200 ns<br><i>inferred</i><sup><a href="#r13">13</a></sup></td>
+      <td class="num">NVLink-C2C:<br>1.8 TB/s coherent<sup><a href="#r2">2</a></sup></td>
+      <td class="num">~800–1000 ns<br><i>inferred</i><sup><a href="#r12">12</a></sup></td>
+    </tr>
+    <tr>
+      <td><span class="pill tag-jbof">JBOF</span> CMX context flash<br><span style="color:var(--muted);font-size:12px">NVIDIA "G3.5" tier</span></td>
+      <td class="num">≤16 TB / GPU<br>600 TB / enclosure<br>petabytes / pod<sup><a href="#r5">5</a>,<a href="#r4">4</a></sup></td>
+      <td class="num">≤200 GB/s / node<br>(~14 GB/s / drive)<sup><a href="#r7">7</a></sup></td>
+      <td class="num">~7–20 µs flash<br>media <i>(µs-class)</i><sup><a href="#r8">8</a>,<a href="#r14">14</a></sup></td>
+      <td class="num">800 Gb/s = 100 GB/s<br>per BlueField-4<sup><a href="#r6">6</a></sup></td>
+      <td class="num">~2–20 µs RDMA<br><i>inferred</i><sup><a href="#r10">10</a></sup></td>
+    </tr>
+    <tr>
+      <td><span class="pill tag-cold">COLDSTORE</span> network storage<br><span style="color:var(--muted);font-size:12px">NVIDIA "G4" tier</span></td>
+      <td class="num">effectively<br>unlimited<sup><a href="#r10">10</a></sup></td>
+      <td class="num">~35–269 GB/s modern<br>RDMA (VAST/GDS)<sup><a href="#r11">11</a></sup></td>
+      <td class="num">~100–200 µs → ~1 ms<br>(ms-class)<sup><a href="#r11">11</a>,<a href="#r8">8</a></sup></td>
+      <td class="num">800 Gb/s = 100 GB/s<br>per DPU (Spectrum-X)<sup><a href="#r6">6</a></sup></td>
+      <td class="num">sub-µs RDMA hop<br>(media dominates)<sup><a href="#r10">10</a></sup></td>
+    </tr>
   </table>
+  <div class="box note">
+    <div class="t">Announced vs inferred</div>
+    <b>Announced by NVIDIA:</b> all capacities (288 GB HBM4, 1.5 TB LPDDR5X, ≤16 TB/GPU flash) and all
+    bandwidths (22 TB/s HBM, 1.2 TB/s LPDDR, NVLink 6 3.6 TB/s, NVLink-C2C 1.8 TB/s, BlueField-4 800 Gb/s,
+    ≤200 GB/s STX storage).<sup><a href="#r1">1</a>,<a href="#r2">2</a>,<a href="#r3">3</a>,<a href="#r4">4</a>,<a href="#r6">6</a>,<a href="#r7">7</a></sup>
+    &nbsp;<b>Inferred (NVIDIA publishes none):</b> every latency. HBM4/LPDDR5X from prior-gen academic
+    benchmarks;<sup><a href="#r13">13</a></sup> NVLink-C2C from Grace Hopper GH200 measurements
+    (800–1000 ns);<sup><a href="#r12">12</a></sup> flash/RDMA from SSD datasheets and GPUDirect-RDMA
+    references.<sup><a href="#r8">8</a>,<a href="#r10">10</a>,<a href="#r14">14</a></sup>
+  </div>
 
-  <h3>How we simulate it faithfully</h3>
+  <h3>5.2 &nbsp;The other latencies — and why they roll up into just two knobs</h3>
+  <p>A real KV reload from a deep tier crosses <em>many</em> latency domains — RDMA, PCIe, NVMe controllers,
+  switch hops, flash media. The simulator does not model each hop separately; the analytical backend only
+  needs two things per tier: a fixed <b>per-access</b> cost and a <b>per-byte streaming</b> cost. So every
+  real-world latency term collapses into one of the config's two latency knobs:
+  <code>mem_latency</code> (the tier's own media/controller access) or <code>link_latency</code> (the
+  network path used to reach it). Bandwidths collapse the same way into <code>mem_bw</code> and
+  <code>link_bw</code>.</p>
+  <table>
+    <tr><th>Real-world latency term</th><th>Magnitude</th><th>Rolls into</th></tr>
+    <tr><td>HBM4 cell access</td><td class="num">~120–160 ns<sup><a href="#r13">13</a></sup></td><td><span class="pill tag-npu">NPU</span> <code>mem_latency</code></td></tr>
+    <tr><td>LPDDR5X cell access</td><td class="num">~110–200 ns<sup><a href="#r13">13</a></sup></td><td><span class="pill tag-cpu">CPU</span> <code>mem_latency</code></td></tr>
+    <tr><td>NVLink-C2C CPU↔GPU round-trip</td><td class="num">~800–1000 ns<sup><a href="#r12">12</a></sup></td><td><span class="pill tag-cpu">CPU</span> <code>link_latency</code> *</td></tr>
+    <tr><td>NVLink 6 GPU↔GPU switch hop</td><td class="num">~1–2 µs<sup><a href="#r2">2</a></sup></td><td><span class="pill tag-npu">NPU</span> scale-up (ASTRA-Sim net) *</td></tr>
+    <tr><td>GPUDirect-RDMA small-message floor</td><td class="num">~2–5 µs<sup><a href="#r10">10</a></sup></td><td><span class="pill tag-jbof">JBOF</span> <code>link_latency</code> (floor)</td></tr>
+    <tr><td>PCIe Gen6 x16 host hop (BlueField-4)</td><td class="num">sub-µs<sup><a href="#r6">6</a></sup></td><td>folded into <code>link_latency</code></td></tr>
+    <tr><td>NVMe flash media (E3.S 4K read)</td><td class="num">&lt;7 µs<sup><a href="#r14">14</a></sup></td><td><span class="pill tag-jbof">JBOF</span> <code>mem_latency</code></td></tr>
+    <tr><td>NVMe controller / command overhead</td><td class="num">~10–20 µs<sup><a href="#r8">8</a></sup></td><td><span class="pill tag-jbof">JBOF</span> <code>mem_latency</code></td></tr>
+    <tr><td>NVMe-oF / RoCE round-trip (worst case)</td><td class="num">~80–150 µs<sup><a href="#r10">10</a></sup></td><td><span class="pill tag-jbof">JBOF</span> <code>link_latency</code> (tail)</td></tr>
+    <tr><td>S3-over-RDMA object read</td><td class="num">~100–200 µs<sup><a href="#r11">11</a></sup></td><td><span class="pill tag-cold">COLDSTORE</span> <code>mem_latency</code></td></tr>
+    <tr><td>Spectrum-X RoCE fabric hop</td><td class="num">sub-µs<sup><a href="#r10">10</a></sup></td><td><span class="pill tag-cold">COLDSTORE</span> <code>link_latency</code></td></tr>
+  </table>
+  <p>The reload cost the simulator actually charges is:</p>
+  <pre class="code">reload_ns = link_latency + bytes/link_bw   <span class="cm"># network path: fixed hop + streaming</span>
+          + mem_latency  + bytes/mem_bw    <span class="cm"># tier media: fixed access + streaming</span></pre>
+  <p>So RDMA + PCIe + switch + protocol overhead all sum into the single <code>link_latency</code> term (plus
+  <code>link_bw</code> for the bytes), and flash-media + NVMe-controller access sum into <code>mem_latency</code>
+  (plus <code>mem_bw</code>). GPUDirect Storage removes the host bounce-buffer entirely, so on the real machine
+  these two terms genuinely <em>are</em> the whole cost.
+  <span style="color:var(--muted)">* The <span class="pill tag-npu">NPU</span>↔<span class="pill tag-npu">NPU</span>
+  and <span class="pill tag-cpu">CPU</span>↔<span class="pill tag-npu">NPU</span> paths are on-package / NVLink
+  and are timed by ASTRA-Sim's own network model, not by a tier <code>link_*</code> knob — the deep-tier
+  <code>link_*</code> knobs apply only to <span class="pill tag-jbof">JBOF</span> and
+  <span class="pill tag-cold">COLDSTORE</span>, which are reached over the Ethernet fabric.</span></p>
+
+  <h3>5.3 &nbsp;How we simulate it faithfully</h3>
   <p>We cannot fill 288 GB of HBM or 16 TB of flash per GPU with any tractable workload. So the recipe is:</p>
   <div class="box insight">
     <div class="t">Faithfulness recipe</div>
     <ol style="margin:6px 0">
-      <li><b>Keep bandwidth &amp; latency at the REAL values</b> — a tier's <em>speed</em> is physical, so
-      <code>mem_bw</code>/<code>mem_latency</code>/<code>link_*</code> are the real Vera Rubin numbers
-      (HBM 22 000 GB/s @ 10 ns, LPDDR 1 000 @ 120 ns, flash 64 @ 80 µs behind 100 GB/s / 2 µs, disk 4 @ 2 ms).</li>
+      <li><b>Keep bandwidth &amp; latency at REAL (or conservative) values</b> — a tier's <em>speed</em> is
+      physical, so <code>mem_bw</code>/<code>mem_latency</code>/<code>link_*</code> track the Vera Rubin
+      figures from §5.1.</li>
       <li><b>Scale only the CAPACITIES</b>, by one common factor, so the real inter-tier ratios are
       preserved (NPU-KV : CPU : JBOF ≈ 1 : 2.7 : 58) and a feasible workload still overflows each tier
       naturally.</li>
@@ -519,39 +600,119 @@ jbof_load       1          LOCAL      0           JBOF:0      27493990     LOCAL
       still keeps a healthy KV headroom over the weights.</li>
     </ol>
   </div>
+  <p>These are the exact inputs we feed LLMServingSim — same six columns as §5.1, so you can compare row by
+  row. Latencies are in <b>ns</b>; bandwidths in <b>GB/s</b> (numerically = bytes/ns):</p>
   <table>
-    <tr><th>Per GPU</th><th>Real</th><th>Our sim (bw &amp; latency real, capacity scaled)</th></tr>
-    <tr><td>NPU</td><td class="num">288 GB</td><td class="num">3.9 GiB @ 22 000 GB/s, 10 ns</td></tr>
-    <tr><td>CPU</td><td class="num">750 GB</td><td class="num">0.85 GiB @ 1 000 GB/s, 120 ns</td></tr>
-    <tr><td>JBOF</td><td class="num">16 TB</td><td class="num">18.8 GiB @ 64 GB/s, 80 µs, link 100 GB/s / 2 µs</td></tr>
-    <tr><td>COLDSTORE</td><td class="num">—</td><td class="num">188 GiB @ 4 GB/s, 2 ms, link 16 GB/s / 20 µs</td></tr>
+    <tr>
+      <th>Tier</th><th>Sim capacity<br>(<code>mem_size</code>)</th><th>Sim mem<br>bandwidth</th>
+      <th>Sim mem<br>latency</th><th>Sim link<br>bandwidth</th><th>Sim link<br>latency</th>
+    </tr>
+    <tr>
+      <td><span class="pill tag-npu">NPU</span></td><td class="num">3.9 GiB</td>
+      <td class="num">22000</td><td class="num">10</td><td class="num">— †</td><td class="num">— †</td>
+    </tr>
+    <tr>
+      <td><span class="pill tag-cpu">CPU</span></td><td class="num">0.85 GiB</td>
+      <td class="num">1000</td><td class="num">120</td><td class="num">— †</td><td class="num">— †</td>
+    </tr>
+    <tr>
+      <td><span class="pill tag-jbof">JBOF</span></td><td class="num">18.8 GiB</td>
+      <td class="num">64</td><td class="num">80000</td><td class="num">100</td><td class="num">2000</td>
+    </tr>
+    <tr>
+      <td><span class="pill tag-cold">COLDSTORE</span></td><td class="num">188 GiB</td>
+      <td class="num">4</td><td class="num">2000000</td><td class="num">16</td><td class="num">20000</td>
+    </tr>
   </table>
-  <p>So a run on 72 of these GPUs <em>is</em> a Vera Rubin rack, with real per-tier timing — only the
-  absolute capacities (and the model) are shrunk to fit a simulation.</p>
+  <ul style="font-size:14px;color:#333;margin:6px 0">
+    <li><b>NPU / CPU bandwidths are the real figures</b> (22 000 = 22 TB/s; 1 000 ≈ 1.2 TB/s LPDDR).
+    <b>CPU latency 120 ns</b> sits inside the inferred 110–200 ns band. <b>NPU latency 10 ns</b> is a nominal
+    near-zero: on-NPU cache hits never <em>reload</em>, so this tier's latency is immaterial to the study
+    (the real HBM4 access is ~120–160 ns, but it only matters for tiers we actually fetch from).</li>
+    <li><b>JBOF link is real</b> — <code>link_bw</code> 100 GB/s = BlueField-4's 800 Gb/s; <code>link_latency</code>
+    2 µs = the GPUDirect-RDMA small-message floor. Its <code>mem_bw</code> 64 and <code>mem_latency</code> 80 µs
+    are <em>conservative</em> (real media is ~14 GB/s/drive up to ~200 GB/s/node at ~7–20 µs) — we round the
+    pooled effective bandwidth down and fold NVMe queueing into the latency.</li>
+    <li><b>COLDSTORE deliberately models the slow "traditional storage" baseline</b> that CMX/JBOF replaces —
+    which is exactly what NVIDIA's headline "<b>up to 5× tokens/s</b>" is measured <em>against</em>.<sup><a href="#r4">4</a></sup>
+    Modern RDMA object stores (VAST/WEKA, ~35–269 GB/s / ~100 µs) are faster, but they are not the baseline
+    the 5× claim compares to, so our COLDSTORE stays at legacy-storage speed (4 GB/s, 2 ms). The
+    JBOF↔COLDSTORE gap is therefore what brackets the 5× headline in §5's rack run.</li>
+    <li>† <b>NPU/CPU have no <code>link_*</code> knobs</b> — they are on-package (HBM) or NVLink-C2C, timed by
+    ASTRA-Sim's network model, not by a deep-tier reload (see §5.2 footnote).</li>
+  </ul>
+  <p>Only <code>mem_size</code> is shrunk; every bandwidth and latency is the real hardware figure (or a
+  conservative version of it). So a run on 72 of these GPUs <em>is</em> a Vera Rubin rack with faithful
+  per-tier <em>timing</em> — only the absolute capacities and the model are scaled to fit a simulation.</p>
 
-  <h3>Where the bandwidth &amp; latency numbers come from</h3>
-  <p>Every tier block in the config JSON carries a <code>mem_bw</code>, a <code>mem_latency</code>, and —
-  for the pooled tiers — a <code>link_bw</code> and <code>link_latency</code>. These are the exact values
-  used and why each is a real Vera Rubin figure. In the reload formula, <code>mem_bw</code>/<code>link_bw</code>
-  are in <b>GB/s</b> (numerically = bytes/ns) and latencies are in <b>ns</b>.</p>
-  <table>
-    <tr><th>Tier · knob</th><th>Config value</th><th>Why this value (Vera Rubin)</th></tr>
-    <tr><td><span class="pill tag-npu">NPU</span> · mem_bw</td><td class="num">22000</td><td>Rubin HBM4 delivers ≈ 22 TB/s per GPU.</td></tr>
-    <tr><td>NPU · mem_latency</td><td class="num">10</td><td>HBM access ~10 ns — near-negligible; on-NPU cache hits are effectively free.</td></tr>
-    <tr><td><span class="pill tag-cpu">CPU</span> · mem_bw</td><td class="num">1000</td><td>Vera LPDDR5X ≈ 1 TB/s aggregate per GPU.</td></tr>
-    <tr><td>CPU · mem_latency</td><td class="num">120</td><td>LPDDR/DRAM access latency ~120 ns.</td></tr>
-    <tr><td><span class="pill tag-jbof">JBOF</span> · mem_bw</td><td class="num">64</td><td>Pooled NVMe-flash read bandwidth ~64 GB/s.</td></tr>
-    <tr><td>JBOF · mem_latency</td><td class="num">80000</td><td>Flash media access latency ~80 µs.</td></tr>
-    <tr><td>JBOF · link_bw</td><td class="num">100</td><td>BlueField-4 network path: 800 Gb/s = 100 GB/s.</td></tr>
-    <tr><td>JBOF · link_latency</td><td class="num">2000</td><td>RDMA round-trip over the Spectrum-X fabric ~2 µs.</td></tr>
-    <tr><td><span class="pill tag-cold">COLDSTORE</span> · mem_bw</td><td class="num">4</td><td>Network/object-storage read bandwidth ~4 GB/s.</td></tr>
-    <tr><td>COLDSTORE · mem_latency</td><td class="num">2000000</td><td>Network-storage access latency ~2 ms.</td></tr>
-    <tr><td>COLDSTORE · link_bw</td><td class="num">16</td><td>Storage-network link ~16 GB/s.</td></tr>
-    <tr><td>COLDSTORE · link_latency</td><td class="num">20000</td><td>Storage-network round-trip ~20 µs.</td></tr>
-  </table>
-  <p>Only <code>mem_size</code> (capacity) is scaled down; every bandwidth and latency above is the real
-  hardware figure — so the <em>timing</em> of each reload is faithful even though the capacities are shrunk.
-  This is what lets the simulation stand in for a real Vera Rubin rack.</p>
+  <h3>5.4 &nbsp;Why there is no rack- or tray-local FLASH tier</h3>
+  <p>Our tier chain is <code>NPU → CPU → JBOF → COLDSTORE</code> — the <span class="pill tag-flash">FLASH</span>
+  slot (a node/tray-local SSD) is deliberately <b>left empty</b> for the Vera Rubin configs. That matches how
+  the real machine is built, and here is the evidence:</p>
+  <ol style="font-size:14px;color:#333">
+    <li><b>NVIDIA's own memory taxonomy names it "G3.5", not "G3".</b> The ladder is
+    G1 HBM → G2 DRAM → <b>G3 local SSD</b> → <b>G3.5 CMX pooled flash</b> → G4 network storage. Solidigm states
+    CMX "serves as Tier 3.5 memory — a level between <em>local SSD (Tier 3), which extends capacity beyond DRAM
+    but is not shareable across the pod</em>, and shared storage."<sup><a href="#r9">9</a></sup> Vera Rubin's
+    KV-offload flash is explicitly the <em>pooled network</em> tier (G3.5 = our JBOF), <em>not</em> the
+    tray-local G3 SSD.</li>
+    <li><b>It is physically a separate enclosure on the fabric.</b> CMX flash lives in standalone BlueField-4
+    "STX" JBOF chassis (4 BlueField-4 × 150 TB = 600 TB per enclosure), connected to Rubin compute nodes over
+    Spectrum-X Ethernet — <em>not</em> mounted in the compute tray.<sup><a href="#r5">5</a></sup></li>
+    <li><b>It is reached over a network protocol, not local PCIe.</b> Access is NVMe-oF / RDMA (with NVMe-KV
+    extensions) across the pod fabric.<sup><a href="#r4">4</a></sup> That is a network hop by construction — the
+    reason our JBOF tier carries <code>link_bw</code>/<code>link_latency</code> knobs and FLASH would not.</li>
+    <li><b>Its whole purpose is pod-wide sharing.</b> CMX exists so KV/context computed by one GPU can be reused
+    by <em>any</em> GPU in the pod without recompute — which <em>requires</em> network reachability. A tray-local
+    SSD, unshareable across the pod, cannot serve that role, so the design skips it.<sup><a href="#r9">9</a>,<a href="#r4">4</a></sup></li>
+    <li><b>The orchestration confirms the ladder.</b> NVIDIA Dynamo's KV Block Manager tiers blocks
+    HBM → DRAM → CMX (G3.5) → network storage (G4) via the NIXL transfer library — moving straight from CPU
+    DRAM to the pooled context tier, with no node-local-SSD KV stage in the Vera Rubin inference path.<sup><a href="#r4">4</a></sup></li>
+  </ol>
+  <p>So modeling a rack/tray-local FLASH tier would insert a hop the real Vera Rubin machine does not have.
+  Keeping the slot empty — CPU DRAM spilling straight into the pooled network flash (JBOF/CMX) — is the
+  faithful topology. (The <span class="pill tag-flash">FLASH</span> tier remains available in the code for
+  other hardware that <em>does</em> use local SSDs; it is simply unused for the Vera Rubin study.)</p>
+
+  <h3 id="refs">5.5 &nbsp;References</h3>
+  <ol style="font-size:13px;color:#333;line-height:1.5">
+    <li id="r1">NVIDIA — <i>Vera Rubin NVL72</i> product page: 288 GB HBM4/GPU, 20.7 TB &amp; 1,580 TB/s per rack,
+      54 TB LPDDR5X/rack. <a href="https://www.nvidia.com/en-us/data-center/vera-rubin-nvl72/">nvidia.com/en-us/data-center/vera-rubin-nvl72</a></li>
+    <li id="r2">NVIDIA Developer Blog — <i>Inside the NVIDIA Rubin Platform</i>: 22 TB/s HBM4, NVLink 6 3.6 TB/s/GPU
+      &amp; 260 TB/s/rack, NVLink-C2C 1.8 TB/s coherent. <a href="https://developer.nvidia.com/blog/inside-the-nvidia-rubin-platform-six-new-chips-one-ai-supercomputer/">developer.nvidia.com/blog/inside-the-nvidia-rubin-platform…</a></li>
+    <li id="r3">NVIDIA Developer Blog — <i>NVIDIA Vera CPU…</i>: up to 1.5 TB LPDDR5X/socket (SOCAMM2), 1.2 TB/s,
+      88 Olympus cores. <a href="https://developer.nvidia.com/blog/nvidia-vera-cpu-delivers-high-performance-bandwidth-and-efficiency-for-ai-factories/">developer.nvidia.com/blog/nvidia-vera-cpu…</a></li>
+    <li id="r4">NVIDIA Developer Blog — <i>Introducing NVIDIA BlueField-4-Powered Inference Context Memory Storage
+      (CMX)</i>: G3.5 pooled Ethernet-attached flash, NVMe-oF/RDMA, Dynamo/NIXL orchestration, "up to 5×
+      tokens/s vs traditional storage". <a href="https://developer.nvidia.com/blog/introducing-nvidia-bluefield-4-powered-inference-context-memory-storage-platform-for-the-next-frontier-of-ai/">developer.nvidia.com/blog/introducing…-context-memory-storage…</a></li>
+    <li id="r5">Blocks &amp; Files (2026-01-12) — CMX capacity math: 4 BlueField-4 × 150 TB = 600 TB/enclosure;
+      ≤16 TB/GPU; petabytes/pod; Spectrum-X links compute to CMX target nodes.
+      <a href="https://blocksandfiles.com/2026/01/12/nvidias-basic-context-memory-extension-infrastructure/">blocksandfiles.com/2026/01/12/nvidias-…-context-memory…</a></li>
+    <li id="r6">ServeTheHome — <i>NVIDIA BlueField-4 with 64 Arm cores and 800G networking</i>: 800 Gb/s (=100 GB/s)
+      per DPU, ConnectX-9, PCIe Gen6, RoCE over Spectrum-X.
+      <a href="https://www.servethehome.com/nvidia-bluefield-4-with-64-arm-cores-and-800g-networking-announced-for-2026/">servethehome.com/nvidia-bluefield-4-…-800g-networking…</a></li>
+    <li id="r7">MLQ.ai — <i>NVIDIA BlueField-4 STX storage architecture (GTC 2026)</i>: up to 200 GB/s storage
+      bandwidth per node, NVMe-oF on the DPU. <a href="https://mlq.ai/news/nvidia-launches-bluefield-4-stx-storage-architecture-at-gtc-2026-supermicro-among-first-to-build-cmx-server/">mlq.ai/news/nvidia-launches-bluefield-4-stx…</a></li>
+    <li id="r8">NAND Research — <i>Improving Inference: NVIDIA's Context Memory Storage Platform</i>: G1–G4 latency
+      ladder (HBM ns → DRAM 10–100 ns → SSD µs → network storage ms).
+      <a href="https://nand-research.com/research-note-improving-inference-nvidias-inference-context-memory-storage-platform/">nand-research.com/research-note-improving-inference…</a></li>
+    <li id="r9">Solidigm — <i>What is CMX (Context Memory Storage)</i>: CMX = "Tier 3.5" between node-local SSD
+      (Tier 3, not pod-shareable) and shared storage. <a href="https://www.solidigm.com/products/technology/what-is-cmx-context-memory-storage.html">solidigm.com/…/what-is-cmx-context-memory-storage</a></li>
+    <li id="r10">WEKA — <i>What is GPUDirect RDMA</i> &amp; <i>Context Memory</i>: sub-µs zero-copy RoCE fabric hop;
+      media latency dominates end-to-end. <a href="https://www.weka.io/learn/glossary/gpu/what-is-gpudirect-rdma/">weka.io/learn/glossary/gpu/what-is-gpudirect-rdma</a> ·
+      <a href="https://www.weka.io/learn/ai-ml/what-is-context-memory-primary/">weka.io/learn/ai-ml/what-is-context-memory-primary</a></li>
+    <li id="r11">VAST Data — <i>GPUDirect for Storage</i> &amp; <i>S3-over-RDMA: scaling the KV-cache data plane</i>:
+      ~35 GB/s to saturate a GPU, ~94–98 GB/s per 8-GPU node, ~269 GiB/s per 8-node cluster; KV reads
+      ~100–200 µs (→ ~1 ms loaded). <a href="https://www.vastdata.com/blog/nvidia-gpu-direct-for-storage-gds-the-vast-data-story">vastdata.com/blog/nvidia-gpu-direct-for-storage…</a> ·
+      <a href="https://www.vastdata.com/blog/s3-over-rdma-scaling-the-kv-cache-data-plane">vastdata.com/blog/s3-over-rdma-scaling-the-kv-cache…</a></li>
+    <li id="r12">HPI / ACM — <i>Towards Memory Disaggregation via NVLink-C2C</i>: Grace Hopper GH200 CPU→GPU-memory
+      access measured 800–1000 ns (used as the Vera Rubin NVLink-C2C latency proxy; NVIDIA publishes none).</li>
+    <li id="r13">Academic HBM/LPDDR latency benchmarks used for inference: HBM2/2E loaded latency ~122–135 ns
+      (UMD DRAMSim/MEMSYS &amp; arXiv Aurora HBM studies); LPDDR5X ~110–200 ns (chipsandcheese LPDDR5 APU
+      measurements). NVIDIA publishes no HBM4/LPDDR5X latency; these anchor the inferred figures.</li>
+    <li id="r14">DapuStor — E3.S enterprise SSD 4K random read &lt;7 µs (flash-media component of the JBOF
+      access latency). <a href="https://en.dapustor.com/news/112.html">en.dapustor.com/news/112.html</a></li>
+  </ol>
 
   <h3>The rack run (72 GPUs)</h3>
   <p>Scaling the §2 example to 72 GPUs (one full rack) with a larger workload so NPU + the per-rack CPU
