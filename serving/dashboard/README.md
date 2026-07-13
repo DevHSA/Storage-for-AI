@@ -2,8 +2,10 @@
 
 A browser dashboard that shows **live** simulation metrics — throughput,
 request/token/batch counters (incl. decode tokens), per-tier memory occupancy
-(pooled vs per-device, with the per-device split + total), prefix-cache hits,
-and latency percentiles (TTFT / TBT / ITL / E2E) — updating every log interval.
+(explicit scope + per-device split + total), per-tier reload latency, a
+per-instance drill-down, prefix-cache hits, latency percentiles (TTFT / TBT /
+ITL / E2E), and **over-sim-time charts** (throughput, KV-spill memory, TTFT,
+TBT) — updating every log interval. Light/dark theme + adjustable refresh rate.
 
 ## How it works
 
@@ -52,13 +54,23 @@ Point at a non-default snapshot via the sidebar or `LLMSS_DASHBOARD_FILE`.
 
 - **Header** — status (starting/running/done), model, topology (nodes ·
   instances · GPUs · TP), `--tier-policy` / `--cpu-scope` / `--prefix-storage`,
-  sim clock, wall time, progress (finished / total requests).
+  sim clock, wall time, progress (finished / total requests). Controls for the
+  **refresh rate** (0.5 s … 10 s) and a **light/dark** toggle.
+- **Tier specs panel** (collapsible) — per tier: scope, mem bw/latency, and (for
+  the deep tiers) the BlueField link bw/latency.
 - **Tiles** — requests finished/running/waiting; prompt / decode / total tokens;
-  batches; req/s; decode tok/s (cumulative + live); total tok/s.
-- **Throughput chart** — prompt vs decode tok/s over sim time.
-- **Memory by tier** — per tier: scope badge (**pooled (pod-wide)** vs
-  **per-node** / **per-instance**), total used/cap bar, and for per-device tiers
-  the per-device split with a total.
-- **Prefix cache** — overall hit ratio + per-tier hit tokens / hit % / reload ms.
+  batches; req/s; decode & prompt tok/s (cumulative + **last / peak**, so they
+  stay meaningful at `done` when the instantaneous rate reads 0).
+- **Over-sim-time charts** — throughput (prompt vs decode tok/s); **KV-spill
+  memory** (stacked area of CPU → deep tiers, so you watch the cascade fill);
+  **TTFT** mean; **TBT** mean.
+- **Memory by tier (now)** — per tier: explicit scope badge — NPU **per-GPU**,
+  CPU **per-instance / per-node** (by `--cpu-scope`), FLASH **per-node**,
+  JBOF/COLDSTORE **pooled (pod-wide)** — total used/cap bar, and for per-device
+  tiers the per-device split with a total.
+- **Prefix cache** — overall hit ratio + per-tier hit tokens / hit % / reload ms,
+  with a per-tier **reload-latency** bar chart (slow-tier cost at a glance).
 - **Latency** — TTFT / TBT / ITL / E2E: mean / p50 / p90 / p99 / max.
+- **Per-instance drill-down** — per GPU/instance: running / waiting requests,
+  NPU HBM %, KV bytes, prefix-cache hit ratio.
 - **NPU HBM** — per-instance weight + KV occupancy.

@@ -709,6 +709,27 @@ def main():
         # needs the same "../" hop the CSV/txt outputs use to land at repo root.
         _dp = args.dashboard_file
         dash_write_path = _dp if os.path.isabs(_dp) else f'../{_dp}'
+        # Per-tier bw/latency spec (for the dashboard config panel). NPU from the
+        # first instance, CPU from node 0, deep tiers from the first configured node.
+        _tier_specs = []
+        try:
+            _npu0 = instances[0].get("npu_mem", {})
+            _tier_specs.append({"name": "NPU", "scope": "per-GPU",
+                                "mem_bw": _npu0.get("mem_bw"), "mem_latency": _npu0.get("mem_latency")})
+            _tier_specs.append({"name": "CPU", "scope": cpu_scope.replace("_", "-"),
+                                "mem_bw": cpu_mem_bw[0] if cpu_mem_bw else None,
+                                "mem_latency": cpu_mem_latency[0] if cpu_mem_latency else None})
+            for _tn in deep_tier_names:
+                _tc = _tier_cfgs.get(_tn, {})
+                _n = next((i for i, s in enumerate(_tc.get("size", [])) if s and s > 0), 0)
+                _tier_specs.append({
+                    "name": _tn,
+                    "scope": "per-node" if _tn == "FLASH" else "pooled",
+                    "mem_bw": _tc.get("mem_bw", [None])[_n], "mem_latency": _tc.get("mem_latency", [None])[_n],
+                    "link_bw": _tc.get("link_bw", [None])[_n], "link_latency": _tc.get("link_latency", [None])[_n],
+                })
+        except Exception:
+            _tier_specs = []
         dash_config = {
             "models": sorted({inst["model_name"] for inst in instances}),
             "num_nodes": num_nodes, "num_instances": num_instances, "total_npu": total_npu,
@@ -718,12 +739,13 @@ def main():
             "block_size": args.block_size, "dtype": args.dtype,
             "cluster_config": os.path.basename(args.cluster_config),
             "dataset": os.path.basename(dataset) if dataset else None,
+            "tier_specs": _tier_specs,
         }
         # Initial snapshot so the dashboard shows the config before the first interval.
         try:
             dashboard.write_snapshot(dash_write_path, dashboard.build_snapshot(
                 "starting", clock_ns=0, freq=FREQ, wall_seconds=0.0, config=dash_config,
-                req_cnt=0, total_prompt=0, total_gen=0,
+                cpu_scope=cpu_scope, req_cnt=0, total_prompt=0, total_gen=0,
                 requests_total=len(getattr(router, "_pending_requests", [])),
                 schedulers=schedulers, num_nodes=num_nodes, num_instances=num_instances))
         except Exception:
@@ -1000,16 +1022,16 @@ def main():
             throughput.append((prompt_th*RATIO, gen_th*RATIO))
             last_log += INTERVAL
             if dash_enabled:
-                dash_history.append({"t_s": last_log / FREQ,
-                                     "prompt_tps": prompt_th * RATIO, "decode_tps": gen_th * RATIO})
                 try:
+                    # build_snapshot appends this interval's timeline point
+                    # (throughput + per-tier memory + TTFT/TBT) to dash_history.
                     dashboard.write_snapshot(dash_write_path, dashboard.build_snapshot(
                         "running", clock_ns=current, freq=FREQ, wall_seconds=time() - start_time,
-                        config=dash_config, req_cnt=req_cnt, total_prompt=total_prompt,
-                        total_gen=total_gen,
+                        config=dash_config, cpu_scope=cpu_scope, req_cnt=req_cnt,
+                        total_prompt=total_prompt, total_gen=total_gen,
                         requests_total=len(getattr(router, "_pending_requests", [])),
                         schedulers=schedulers, num_nodes=num_nodes, num_instances=num_instances,
-                        throughput_history=dash_history,
+                        history=dash_history, t_s=last_log / FREQ, record_point=True,
                         live_prompt_tps=prompt_th * RATIO, live_gen_tps=gen_th * RATIO))
                 except Exception:
                     pass
@@ -1360,12 +1382,11 @@ def main():
         try:
             dashboard.write_snapshot(dash_write_path, dashboard.build_snapshot(
                 "done", clock_ns=current, freq=FREQ, wall_seconds=time() - start_time,
-                config=dash_config, req_cnt=req_cnt, total_prompt=total_prompt,
-                total_gen=total_gen,
+                config=dash_config, cpu_scope=cpu_scope, req_cnt=req_cnt,
+                total_prompt=total_prompt, total_gen=total_gen,
                 requests_total=len(getattr(router, "_pending_requests", [])),
                 schedulers=schedulers, num_nodes=num_nodes, num_instances=num_instances,
-                throughput_history=dash_history,
-                live_prompt_tps=0.0, live_gen_tps=0.0))
+                history=dash_history, live_prompt_tps=0.0, live_gen_tps=0.0))
             print_markup(f"Dashboard live metrics: {dash_file}")
         except Exception:
             pass

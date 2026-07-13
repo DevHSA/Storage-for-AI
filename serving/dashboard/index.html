@@ -9,17 +9,27 @@
     --bg:#0b0f14; --panel:#121821; --panel2:#0e141c; --line:#1e2733;
     --txt:#e6edf3; --muted:#8b98a5; --accent:#3fb950; --accent2:#58a6ff;
     --npu:#3fb950; --cpu:#58a6ff; --flash:#d29922; --jbof:#bc8cff; --cold:#8b98a5;
-    --warn:#d29922; --bad:#f85149;
+    --warn:#d29922; --bad:#f85149; --codebg:#0d1117; --codetx:#a5d6ff;
+  }
+  body.light{
+    --bg:#f6f8fa; --panel:#ffffff; --panel2:#eef1f4; --line:#d0d7de;
+    --txt:#1f2328; --muted:#59636e; --accent:#1a7f37; --accent2:#0969da;
+    --npu:#1a7f37; --cpu:#0969da; --flash:#9a6700; --jbof:#8250df; --cold:#59636e;
+    --warn:#9a6700; --bad:#cf222e; --codebg:#f0f3f6; --codetx:#0550ae;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--txt);
+  body{margin:0;background:var(--bg);color:var(--txt);transition:background .2s,color .2s;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     font-size:14px;line-height:1.5}
-  .wrap{max-width:1400px;margin:0 auto;padding:18px 22px 60px}
+  .wrap{max-width:1500px;margin:0 auto;padding:18px 22px 60px}
   h1{font-size:20px;margin:0;display:flex;align-items:center;gap:10px}
   h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
     margin:26px 0 10px;font-weight:700}
   .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .btn,select{background:var(--panel);color:var(--txt);border:1px solid var(--line);
+    border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+  .btn:hover{border-color:var(--accent2)}
   .pill{display:inline-block;padding:2px 12px;border-radius:20px;font-size:12px;font-weight:700}
   .st-running{background:rgba(63,185,80,.18);color:#56d364;border:1px solid #2ea043}
   .st-done{background:rgba(88,166,255,.18);color:#79c0ff;border:1px solid #388bfd}
@@ -29,9 +39,13 @@
   .sub{color:var(--muted);font-size:12.5px}
   .banner{display:flex;gap:26px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);
     border-radius:10px;padding:12px 16px;margin-top:12px}
-  .banner div{font-size:13px}.banner b{color:var(--txt)}.banner .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-  code{background:#0d1117;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12px;color:#a5d6ff}
-  .progress{height:14px;background:#0d1117;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:12px}
+  .banner div{font-size:13px}.banner b{color:var(--txt)}
+  .banner .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  code{background:var(--codebg);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12px;color:var(--codetx)}
+  details.specs{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+  details.specs summary{cursor:pointer;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+  details.specs[open] summary{margin-bottom:8px}
+  .progress{height:14px;background:var(--codebg);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:12px}
   .progress > div{height:100%;background:linear-gradient(90deg,#238636,#3fb950);transition:width .4s}
   .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
   .tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
@@ -45,55 +59,65 @@
   .tier .hd{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px}
   .tier .nm{font-weight:700}
   .scope{font-size:10.5px;padding:1px 8px;border-radius:12px;border:1px solid var(--line);color:var(--muted)}
-  .scope.pooled{color:#79c0ff;border-color:#388bfd}
-  .bar{height:12px;background:#0d1117;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .scope.pooled{color:var(--accent2);border-color:var(--accent2)}
+  .bar{height:12px;background:var(--codebg);border:1px solid var(--line);border-radius:7px;overflow:hidden}
   .bar > div{height:100%;transition:width .4s}
   .tier .amt{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
   .devs{margin-top:7px;display:grid;gap:5px}
-  .dev{display:grid;grid-template-columns:120px 1fr 120px;align-items:center;gap:8px;font-size:12px}
+  .dev{display:grid;grid-template-columns:120px 1fr 130px;align-items:center;gap:8px;font-size:12px}
   .dev .db{height:8px}
   table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
   th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--line)}
   th:first-child,td:first-child{text-align:left}
   th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
-  .idle{opacity:.55}
+  .idle{opacity:.5}
   .foot{color:var(--muted);font-size:12px;margin-top:26px;border-top:1px solid var(--line);padding-top:10px}
   .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--accent);margin-right:6px}
+  .sublead{color:var(--muted);font-size:11px;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.04em;font-weight:700}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="topbar">
     <h1>📊 LLMServingSim <span class="sub">live metrics</span></h1>
-    <div><span id="status" class="pill st-waiting">waiting</span>
-      <span id="freshness" class="sub" style="margin-left:10px"></span></div>
+    <div class="ctl">
+      <span id="status" class="pill st-waiting">waiting</span>
+      <span id="freshness" class="sub"></span>
+      <label class="sub">refresh
+        <select id="refresh">
+          <option value="500">0.5 s</option><option value="1000">1 s</option>
+          <option value="1500">1.5 s</option><option value="3000">3 s</option>
+          <option value="5000">5 s</option><option value="10000">10 s</option>
+        </select></label>
+      <button id="themeBtn" class="btn">☀️ Light</button>
+    </div>
   </div>
   <div id="banner" class="banner"><div class="sub">Waiting for a run started with <code>--dashboard</code>…</div></div>
+  <details class="specs"><summary>⚙️ Tier specs — bandwidth / latency</summary><div id="specs"></div></details>
   <div class="progress"><div id="progbar" style="width:0%"></div></div>
   <div id="progtext" class="sub" style="margin-top:6px"></div>
 
   <div id="tiles" class="tiles"></div>
 
   <div class="grid2" style="margin-top:8px">
-    <div>
-      <h2>⚡ Throughput over sim time</h2>
-      <div class="card"><div id="chart"></div></div>
-    </div>
-    <div>
-      <h2>🧠 Memory by tier</h2>
-      <div class="card"><div id="tiers"></div></div>
-    </div>
+    <div><h2>⚡ Throughput over sim time</h2><div class="card"><div id="chartThr"></div></div></div>
+    <div><h2>🧠 KV spill memory over sim time</h2><div class="card"><div id="chartMem"></div>
+      <div class="sub" style="margin-top:4px">Stacked usage of the spill tiers (CPU → deep tiers). NPU HBM shown separately below.</div></div></div>
   </div>
 
   <div class="grid2">
-    <div>
-      <h2>🎯 Prefix cache</h2>
-      <div class="card"><div id="prefix"></div></div>
-    </div>
-    <div>
-      <h2>⏱️ Latency (ms)</h2>
-      <div class="card"><div id="latency"></div></div>
-    </div>
+    <div><h2>⏱️ TTFT over sim time</h2><div class="card"><div id="chartTtft"></div></div></div>
+    <div><h2>⏱️ TBT over sim time</h2><div class="card"><div id="chartTbt"></div></div></div>
+  </div>
+
+  <div class="grid2">
+    <div><h2>🧠 Memory by tier (now)</h2><div class="card"><div id="tiers"></div></div></div>
+    <div><h2>🎯 Prefix cache</h2><div class="card"><div id="prefix"></div></div></div>
+  </div>
+
+  <div class="grid2">
+    <div><h2>⏱️ Latency (ms)</h2><div class="card"><div id="latency"></div></div></div>
+    <div><h2>🖥️ Per-instance drill-down</h2><div class="card"><div id="insttab"></div></div></div>
   </div>
 
   <h2>🖥️ NPU HBM (weight + KV, per instance)</h2>
@@ -104,45 +128,74 @@
 
 <script>
 const TIER_COLOR = {NPU:"var(--npu)",CPU:"var(--cpu)",FLASH:"var(--flash)",JBOF:"var(--jbof)",COLDSTORE:"var(--cold)"};
+const TIER_ORDER = ["NPU","CPU","FLASH","JBOF","COLDSTORE"];
 const $ = id => document.getElementById(id);
 const fi = n => (n==null?"0":Math.round(n).toLocaleString());
 function fb(b){ b=+b||0; const u=[["TB",2**40],["GB",2**30],["MB",2**20],["KB",2**10]];
   for(const [n,d] of u){ if(b>=d) return (b/d).toFixed(2)+" "+n; } return b.toFixed(0)+" B"; }
 function esc(s){ return (s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
-function barColor(pct){ return pct>=90?"var(--bad)":pct>=70?"var(--warn)":"var(--accent)"; }
+const fmsThr = v => v>=1000?(v/1000).toFixed(1)+"k":Math.round(v);
+const fmsLat = v => v>=1000?(v/1000).toFixed(2)+"s":v.toFixed(1);
+const tcol = t => TIER_COLOR[t]||"var(--accent)";
+const collecting = () => `<div class="sub" style="padding:26px 4px">Collecting samples…
+  (needs ≥2 log intervals — lower <code>--log-interval</code> for denser updates.)</div>`;
 
 function tile(lbl,val,delta){ return `<div class="tile"><div class="lbl">${lbl}</div>
   <div class="val">${val}</div>${delta?`<div class="delta">${delta}</div>`:""}</div>`; }
 
-function drawChart(hist){
-  const el=$("chart");
-  if(!hist||hist.length<2){ el.innerHTML=`<div class="sub" style="padding:24px 4px">Collecting samples…
-    (needs ≥2 log intervals — lower <code>--log-interval</code> for denser updates.)</div>`; return; }
-  const W=560,H=240,pad=38;
-  const xs=hist.map(p=>p.t_s), maxX=Math.max(...xs), minX=Math.min(...xs);
-  const maxY=Math.max(1,...hist.map(p=>Math.max(p.prompt_tps||0,p.decode_tps||0)));
-  const X=v=>pad+(maxX===minX?0:(v-minX)/(maxX-minX))*(W-pad-10);
-  const Y=v=>H-pad-(v/maxY)*(H-pad-14);
-  const line=(key,col)=>`<polyline fill="none" stroke="${col}" stroke-width="2.5"
-     points="${hist.map(p=>X(p.t_s).toFixed(1)+','+Y(p[key]||0).toFixed(1)).join(' ')}"/>`;
-  let ticks=""; for(let i=0;i<=4;i++){ const gy=pad+ (i/4)*(H-pad-14);
-    const val=(maxY*(1-i/4)); ticks+=`<line x1="${pad}" y1="${gy}" x2="${W-10}" y2="${gy}" stroke="#1e2733"/>
-      <text x="${pad-6}" y="${gy+3}" text-anchor="end" fill="#8b98a5" font-size="10">${val>=1000?(val/1000).toFixed(1)+'k':Math.round(val)}</text>`; }
-  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="monospace">
-    ${ticks}${line("prompt_tps","var(--cpu)")}${line("decode_tps","var(--npu)")}
-    <text x="${W-10}" y="14" text-anchor="end" fill="#58a6ff" font-size="11">■ prompt tok/s</text>
-    <text x="${W-10}" y="28" text-anchor="end" fill="#3fb950" font-size="11">■ decode tok/s</text>
-    <text x="${pad}" y="${H-6}" fill="#8b98a5" font-size="10">${minX.toFixed(1)}s</text>
-    <text x="${W-10}" y="${H-6}" text-anchor="end" fill="#8b98a5" font-size="10">${maxX.toFixed(1)}s</text>
-  </svg>`;
+// ---- generalized SVG line chart (one or more series) --------------------- //
+function lineChart(elId, hist, series, yfmt){
+  const el=$(elId);
+  if(!hist||hist.length<2){ el.innerHTML=collecting(); return; }
+  const W=620,H=280,pad=54;
+  const xs=hist.map(p=>p.t_s), minX=Math.min(...xs), maxX=Math.max(...xs);
+  const maxY=Math.max(1e-9,...series.flatMap(s=>hist.map(p=>+p[s.key]||0)));
+  const X=v=>pad+(maxX===minX?0:(v-minX)/(maxX-minX))*(W-pad-12);
+  const Y=v=>H-pad-(v/maxY)*(H-pad-18);
+  const lines=series.map(s=>`<polyline fill="none" stroke="${s.color}" stroke-width="2.5"
+     points="${hist.map(p=>X(p.t_s).toFixed(1)+','+Y(+p[s.key]||0).toFixed(1)).join(' ')}"/>`).join("");
+  let ticks=""; for(let i=0;i<=4;i++){ const gy=pad+(i/4)*(H-pad-18); const val=maxY*(1-i/4);
+    ticks+=`<line x1="${pad}" y1="${gy}" x2="${W-12}" y2="${gy}" stroke="var(--line)"/>
+      <text x="${pad-6}" y="${gy+3}" text-anchor="end" fill="var(--muted)" font-size="10">${yfmt(val)}</text>`; }
+  const leg=series.map((s,i)=>`<text x="${W-12}" y="${14+i*15}" text-anchor="end" fill="${s.color}" font-size="11">■ ${esc(s.label)}</text>`).join("");
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="monospace">${ticks}${lines}${leg}
+    <text x="${pad}" y="${H-6}" fill="var(--muted)" font-size="10">${minX.toFixed(1)}s</text>
+    <text x="${W-12}" y="${H-6}" text-anchor="end" fill="var(--muted)" font-size="10">${maxX.toFixed(1)}s</text></svg>`;
+}
+
+// ---- stacked-area chart for tier memory over time ------------------------ //
+function stackChart(elId, hist, tiers){
+  const el=$(elId);
+  if(!hist||hist.length<2||!tiers.length){ el.innerHTML=collecting(); return; }
+  const W=620,H=280,pad=64;
+  const xs=hist.map(p=>p.t_s), minX=Math.min(...xs), maxX=Math.max(...xs);
+  const totals=hist.map(p=>tiers.reduce((a,t)=>a+((p.mem&&p.mem[t])||0),0));
+  const maxY=Math.max(1,...totals);
+  const X=v=>pad+(maxX===minX?0:(v-minX)/(maxX-minX))*(W-pad-12);
+  const Y=v=>H-pad-(v/maxY)*(H-pad-18);
+  const cum=hist.map(()=>0); let areas="";
+  tiers.forEach(t=>{
+    const top=hist.map((p,i)=>cum[i]+((p.mem&&p.mem[t])||0));
+    const topPts=hist.map((p,i)=>X(p.t_s).toFixed(1)+','+Y(top[i]).toFixed(1));
+    const botPts=hist.map((p,i)=>X(p.t_s).toFixed(1)+','+Y(cum[i]).toFixed(1)).reverse();
+    areas+=`<polygon points="${topPts.concat(botPts).join(' ')}" fill="${tcol(t)}" fill-opacity="0.5" stroke="${tcol(t)}" stroke-width="1"/>`;
+    hist.forEach((p,i)=>{cum[i]=top[i];});
+  });
+  let ticks=""; for(let i=0;i<=4;i++){ const gy=pad+(i/4)*(H-pad-18); const val=maxY*(1-i/4);
+    ticks+=`<line x1="${pad}" y1="${gy}" x2="${W-12}" y2="${gy}" stroke="var(--line)"/>
+      <text x="${pad-6}" y="${gy+3}" text-anchor="end" fill="var(--muted)" font-size="10">${fb(val)}</text>`; }
+  const leg=tiers.map((t,i)=>`<text x="${W-12}" y="${14+i*15}" text-anchor="end" fill="${tcol(t)}" font-size="11">■ ${esc(t)}</text>`).join("");
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="monospace">${ticks}${areas}${leg}
+    <text x="${pad}" y="${H-6}" fill="var(--muted)" font-size="10">${minX.toFixed(1)}s</text>
+    <text x="${W-12}" y="${H-6}" text-anchor="end" fill="var(--muted)" font-size="10">${maxX.toFixed(1)}s</text></svg>`;
 }
 
 function renderTiers(tiers){
   const el=$("tiers"); if(!tiers||!tiers.length){ el.innerHTML='<div class="sub">No tiers.</div>'; return; }
   el.innerHTML = tiers.map(t=>{
-    const col=TIER_COLOR[t.name]||"var(--accent)";
+    const col=tcol(t.name);
     const pooled=t.scope==="pooled";
-    const scopeTxt = pooled?"pooled (pod-wide)":t.scope.replace("_"," ");
+    const scopeTxt = pooled?"pooled (pod-wide)":t.scope;
     let devs="";
     if(!pooled && (t.devices||[]).length>1){
       devs = `<div class="devs">`+t.devices.map(d=>`<div class="dev">
@@ -188,32 +241,65 @@ async function poll(){
     ["wall", `${(d.wall_seconds||0).toFixed(1)} s`],
   ].map(([k,v])=>`<div><div class="k">${k}</div><b>${v}</b></div>`).join("");
 
+  const ts=c.tier_specs||[];
+  $("specs").innerHTML = ts.length ? `<table><tr><th>tier</th><th>scope</th><th>mem BW (GB/s)</th>
+    <th>mem lat (ns)</th><th>link BW (GB/s)</th><th>link lat (ns)</th></tr>`+
+    ts.map(s=>`<tr><td style="color:${tcol(s.name)};font-weight:700">${esc(s.name)}</td><td class="sub">${esc(s.scope||'')}</td>
+      <td>${s.mem_bw??'—'}</td><td>${fi(s.mem_latency)!=='0'||s.mem_latency===0?fi(s.mem_latency):'—'}</td>
+      <td>${s.link_bw??'—'}</td><td>${s.link_latency!=null?fi(s.link_latency):'—'}</td></tr>`).join("")+`</table>`
+    : '<div class="sub">n/a</div>';
+
   const done=ct.requests_finished||0, tot=ct.requests_total||0;
   const pct = tot? Math.min(100,100*done/tot) : (status==="done"?100:0);
   $("progbar").style.width=pct+"%";
   $("progtext").textContent=`Requests finished ${fi(done)} / ${fi(tot)}`;
 
+  // live/peak tok/s: live reads 0 at done, so fall back to the last timeline point.
+  const hist=thr.history||[];
+  const lastPt=hist.length?hist[hist.length-1]:null;
+  const peakDec=hist.length?Math.max(0,...hist.map(p=>+p.decode_tps||0)):0;
+  const peakPr=hist.length?Math.max(0,...hist.map(p=>+p.prompt_tps||0)):0;
+  const liveDec=(thr.live_decode_tok_per_s||0)||(lastPt?+lastPt.decode_tps:0)||0;
+  const livePr=(thr.live_prompt_tok_per_s||0)||(lastPt?+lastPt.prompt_tps:0)||0;
+
   $("tiles").innerHTML=[
     tile("Requests done", fi(done), `${fi(ct.requests_running)} running · ${fi(ct.requests_waiting)} waiting`),
-    tile("Prompt tokens", fi(ct.prompt_tokens)),
-    tile("Decode tokens", fi(ct.decode_tokens)),
+    tile("Prompt tokens", fi(ct.prompt_tokens), `${(thr.prompt_tok_per_s||0).toFixed(0)} tok/s avg`),
+    tile("Decode tokens", fi(ct.decode_tokens), `${(thr.decode_tok_per_s||0).toFixed(0)} tok/s avg`),
     tile("Total tokens", fi(ct.total_tokens)),
     tile("Batches", fi(ct.batches)),
     tile("Req / s", (thr.req_per_s||0).toFixed(2)),
-    tile("Decode tok/s", (thr.decode_tok_per_s||0).toFixed(1), `live ${(thr.live_decode_tok_per_s||0).toFixed(0)}`),
-    tile("Total tok/s", (thr.total_tok_per_s||0).toFixed(1)),
+    tile("Decode tok/s", (thr.decode_tok_per_s||0).toFixed(1), `last ${liveDec.toFixed(0)} · peak ${peakDec.toFixed(0)}`),
+    tile("Prompt tok/s", (thr.prompt_tok_per_s||0).toFixed(1), `last ${livePr.toFixed(0)} · peak ${peakPr.toFixed(0)}`),
   ].join("");
 
-  drawChart(thr.history||[]);
+  // ---- timeline charts ---- //
+  lineChart("chartThr", hist,
+    [{key:"prompt_tps",color:"var(--cpu)",label:"prompt tok/s"},
+     {key:"decode_tps",color:"var(--npu)",label:"decode tok/s"}], fmsThr);
+  // spill tiers = every tier present in history mem except NPU, canonical order
+  const memKeys = hist.length ? Object.keys(hist[hist.length-1].mem||{}) : [];
+  const spill = TIER_ORDER.filter(t=>t!=="NPU" && memKeys.includes(t));
+  stackChart("chartMem", hist, spill);
+  lineChart("chartTtft", hist, [{key:"ttft",color:"var(--flash)",label:"TTFT mean (ms)"}], fmsLat);
+  lineChart("chartTbt", hist, [{key:"tbt",color:"var(--jbof)",label:"TBT mean (ms)"}], fmsLat);
+
   renderTiers(d.tiers||[]);
 
-  const pc=d.prefix_cache||{};
+  // ---- prefix cache + reload bars ---- //
+  const pc=d.prefix_cache||{}, pctiers=pc.tiers||[];
+  const maxRl=Math.max(1,...pctiers.map(x=>+x.reload_ms||0));
+  const reloadBars = pctiers.length ? `<div class="sublead">Reload latency per tier</div><div class="devs">`+
+    pctiers.map(x=>`<div class="dev" style="grid-template-columns:100px 1fr 90px">
+      <span class="sub" style="color:${tcol(x.name)}">${esc(x.name)}</span>
+      <div class="bar db"><div style="width:${Math.min(100,100*(+x.reload_ms||0)/maxRl).toFixed(1)}%;background:${tcol(x.name)}"></div></div>
+      <span class="amt" style="text-align:right">${(+x.reload_ms||0).toFixed(1)} ms</span></div>`).join("")+`</div>` : "";
   $("prefix").innerHTML=`<div class="sub" style="margin-bottom:8px">Overall hit ratio
     <b style="color:var(--txt);font-size:16px">${(pc.total_hit_ratio||0).toFixed(2)}%</b>
-    of ${fi(pc.requested_tokens)} requested tokens</div><div id="pctab"></div>`;
+    of ${fi(pc.requested_tokens)} requested tokens</div><div id="pctab"></div>${reloadBars}`;
   renderTable($("pctab"),
     [{h:"tier",k:"name"},{h:"hit tokens",k:"hit"},{h:"hit %",k:"pct"},{h:"reload ms",k:"rl"}],
-    (pc.tiers||[]).map(x=>({name:x.name,hit:fi(x.hit_tokens),pct:(x.hit_pct||0).toFixed(2),rl:(x.reload_ms||0).toFixed(2)})),
+    pctiers.map(x=>({name:x.name,hit:fi(x.hit_tokens),pct:(x.hit_pct||0).toFixed(2),rl:(x.reload_ms||0).toFixed(2)})),
     r=>r.hit==="0");
 
   const order=[["TTFT","ttft"],["TBT/token","tbt"],["ITL","itl"],["E2E","e2e"]];
@@ -222,17 +308,34 @@ async function poll(){
     order.map(([nm,key])=>{const o=lat[key]||{};return {m:nm,mean:(o.mean||0).toFixed(2),p50:(o.p50||0).toFixed(2),
       p90:(o.p90||0).toFixed(2),p99:(o.p99||0).toFixed(2),max:(o.max||0).toFixed(2)};}));
 
+  renderTable($("insttab"),
+    [{h:"inst",k:"i"},{h:"node",k:"n"},{h:"GPUs",k:"g"},{h:"running",k:"r"},{h:"waiting",k:"w"},
+     {h:"NPU %",k:"p"},{h:"KV",k:"kv"},{h:"hit %",k:"hr"}],
+    (d.instances||[]).map(x=>({i:x.instance,n:x.node,g:x.num_npus,r:fi(x.running),w:fi(x.waiting),
+      p:(x.hbm_pct||0).toFixed(1),kv:fb(x.npu_kv_bytes),hr:(x.hit_ratio||0).toFixed(1)})));
+
   renderTable($("hbm"),
-    [{h:"instance",k:"i"},{h:"GPUs",k:"g"},{h:"used",k:"u"},{h:"cap",k:"c"},{h:"% used",k:"p"},{h:"weight",k:"w"}],
-    (d.npu_hbm||[]).map(h=>({i:h.instance,g:h.num_npus,u:fb(h.used_bytes),c:fb(h.cap_bytes),
+    [{h:"instance",k:"i"},{h:"node",k:"n"},{h:"GPUs",k:"g"},{h:"used",k:"u"},{h:"cap",k:"c"},{h:"% used",k:"p"},{h:"weight",k:"w"}],
+    (d.npu_hbm||[]).map(h=>({i:h.instance,n:h.node,g:h.num_npus,u:fb(h.used_bytes),c:fb(h.cap_bytes),
       p:(h.pct||0).toFixed(2),w:fb(h.weight_bytes)})));
 
-  $("freshness").innerHTML = status==="done"?"run finished":`<span class="dot"></span>updated ${(d.wall_seconds||0).toFixed(1)}s in`;
-  $("foot").innerHTML=`source <code>/api/metrics</code> · status <b>${esc(status)}</b> · latency over ${fi((lat).finished)} finished`;
+  $("freshness").innerHTML = status==="done"?"run finished":`<span class="dot"></span>wall ${(d.wall_seconds||0).toFixed(1)}s`;
+  $("foot").innerHTML=`source <code>/api/metrics</code> · status <b>${esc(status)}</b> · latency over ${fi(lat.finished)} finished · ${hist.length} timeline points`;
   schedule();
 }
+
+// ---- theme + refresh-rate controls --------------------------------------- //
+const themeBtn=$("themeBtn");
+function applyTheme(t){ document.body.classList.toggle("light",t==="light"); themeBtn.textContent=t==="light"?"🌙 Dark":"☀️ Light"; }
+let theme=localStorage.getItem("llmss-theme")||"dark"; applyTheme(theme);
+themeBtn.onclick=()=>{ theme=(theme==="light"?"dark":"light"); localStorage.setItem("llmss-theme",theme); applyTheme(theme); };
+
+let REFRESH_MS=+(localStorage.getItem("llmss-refresh")||1500);
+const rsel=$("refresh"); rsel.value=String(REFRESH_MS);
+rsel.onchange=()=>{ REFRESH_MS=+rsel.value; localStorage.setItem("llmss-refresh",REFRESH_MS); schedule(); };
+
 let timer=null;
-function schedule(){ clearTimeout(timer); timer=setTimeout(poll, 1500); }
+function schedule(){ clearTimeout(timer); timer=setTimeout(poll, REFRESH_MS); }
 poll();
 </script>
 </body>

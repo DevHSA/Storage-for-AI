@@ -1,5 +1,22 @@
 # #!/bin/bash
 
+# --- [2026-07-14] LIVE DASHBOARD demo (--dashboard) -----------------------------------
+#   Two terminals from the repo root:
+#     Terminal A (host):  python3 serving/dashboard/serve.py     # http://localhost:8000
+#     Terminal B (below): the sim with --dashboard  ->  outputs/dashboard/live.json
+#   The 8B tiny-caps config makes the NPU->CPU->JBOF->COLDSTORE cascade visible; the
+#   dashboard shows throughput / KV-spill-memory / TTFT / TBT over sim time, per-tier
+#   memory (scope + per-device split), reload latency, and a per-instance drill-down.
+#   Lower --log-interval => denser timeline points. (Llama-3.1-8B: profiler has 8B tp1/2.)
+# python -m serving \
+#   --cluster-config 'configs/cluster/vera_rubin_tray_2n1g_test_8B.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+#   --cpu-scope per_instance --tier-policy exclusive \
+#   --dashboard --log-interval 0.2 \
+#   --dataset 'workloads/example_trace.jsonl' \
+#   --output 'outputs/dash_demo.csv'
+
 # --- [2026-07-08] TIER-POLICY: exclusive (cascading / write-back-on-eviction) ---------
 #   NEW --tier-policy {inclusive,exclusive}. inclusive (default, unchanged): write-through
 #   -- a cached prefix is copied into CPU AND every deeper tier at once. exclusive: a
@@ -23,11 +40,14 @@
 #   --output 'outputs/vera_rubin_tray_2n1g_test_exclusive_CPU.csv'
 
 
+
+
   python -m serving \
   --cluster-config 'configs/cluster/vera_rubin_tray_2n1g_test_70B.json' \
   --dtype float16 --block-size 16 \
   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
   --cpu-scope per_instance --tier-policy exclusive \
+  --dashboard --log-interval 0.1 \
   --dataset 'workloads/example_trace.jsonl' \
   --output 'outputs/vera_rubin_tray_2n1g_test_exclusive_COLDSTORE.csv'
 
