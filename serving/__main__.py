@@ -238,6 +238,15 @@ def main():
                         'NPU->CPU->FLASH->JBOF->COLDSTORE chain: the named tier and every shallower tier '
                         'are used, deeper tiers are unused (spill past the limit is dropped). '
                         'Requires --enable-prefix-sharing for FLASH/JBOF/COLDSTORE.')
+    parser.add_argument('--cpu-scope', type=str, choices=['per_node', 'per_instance'], default='per_node',
+                        help="scope of the CPU (host-DRAM) prefix-cache tier when --enable-prefix-sharing "
+                        "is on. 'per_node' (default, unchanged): ONE CPU pool per node, shared by all its "
+                        "GPUs -- a request on any GPU can reuse another GPU's offloaded KV directly from "
+                        "CPU. 'per_instance': each GPU gets its OWN private CPU pool (sized at that node's "
+                        "cpu_mem), modeling real per-GPU host memory (e.g. Vera Rubin's 1 CPU : 2 GPU "
+                        "NVLink-C2C LPDDR); cross-GPU reuse can then NOT be served from CPU and instead "
+                        "routes to the pod-wide JBOF/COLDSTORE tiers. Total CPU capacity scales with "
+                        "instances-per-node in per_instance mode.")
     parser.add_argument('--enable-local-offloading', action='store_true', default=False,
                         help='enable weight offloading to local (NPU) memory. '
                         'Recommended to disable unless weight memory access is not counted in profiling')
@@ -312,6 +321,7 @@ def main():
     expert_routing_policy=args.expert_routing_policy
     enable_prefix_sharing=args.enable_prefix_sharing
     prefix_storage=args.prefix_storage
+    cpu_scope=args.cpu_scope
     dataset=args.dataset
     output_file=args.output
     is_init = not args.skip_prefill
@@ -441,26 +451,47 @@ def main():
             return full_cluster_kv_bytes_per_token(model, cfg["fp"], cfg["kv_cache_dtype"])
 
         if storage_medium == 'CPU':
-            for i in range(num_prefix_pool):
-                if cpu_mem_size[i] > 0:
-                    new_prefix_pool = RadixCache(
+            # page_size=1 (token granularity) for the CPU pool in BOTH scopes, like
+            # the CXL pool, the deep tiers, and the non-shared CPU second-tier
+            # (memory_model.py). A larger page floors every insert AND match to a
+            # multiple of it, so any prefix shorter than one page is silently
+            # dropped -> the NPU->CPU baseline would retain/serve nothing.
+            if cpu_scope == 'per_instance':
+                # PER-INSTANCE (per-GPU) CPU: each GPU gets its OWN private CPU pool,
+                # sized at its node's cpu_mem, modeling real per-GPU host memory (e.g.
+                # Vera Rubin's 1 CPU : 2 GPU NVLink-C2C LPDDR). Because the pools are
+                # private, cross-GPU prefix reuse CANNOT be served from CPU and falls
+                # through to the pod-wide JBOF/COLDSTORE tiers -- the faithful path.
+                # Total CPU capacity therefore scales with instances-per-node.
+                for inst_id in range(num_instances):
+                    node = inst2node_mapping[inst_id]
+                    if cpu_mem_size[node] <= 0:
+                        raise RuntimeError(f"Memory size for prefix storage type {storage_medium} is invalid")
+                    prefix_pools.append(RadixCache(
                                                 node_id=0,
                                                 device=storage_medium,
-                                                page_size=1,   # token granularity, like the CXL pool,
-                                                               # the deep tiers, and the non-shared CPU
-                                                               # second-tier (memory_model.py). A larger
-                                                               # page floors every insert AND match to a
-                                                               # multiple of it, so any prefix shorter than
-                                                               # one page is silently dropped -> the NPU->CPU
-                                                               # baseline would retain/serve nothing.
-                                                capacity = cpu_mem_size[i] * GB_TO_BYTE,
-                                                kv_size=_pool_kv_bytes_per_token(node2inst_mapping[i]),
-                                                enable_kv_cache_events=True)
-                    prefix_pools.append(new_prefix_pool)
-                else:
-                    raise RuntimeError(f"Memory size for prefix storage type {storage_medium} is invalid")
-            # This means one node shares one prefix pool
-            prefix_pool_inst_mapping = inst2node_mapping
+                                                page_size=1,
+                                                capacity=cpu_mem_size[node] * GB_TO_BYTE,
+                                                kv_size=_pool_kv_bytes_per_token([inst_id]),
+                                                enable_kv_cache_events=True))
+                # Each instance maps to its own private pool.
+                prefix_pool_inst_mapping = {i: i for i in range(num_instances)}
+            else:
+                # PER-NODE (default): ONE CPU pool per node, shared by all its GPUs.
+                for i in range(num_prefix_pool):
+                    if cpu_mem_size[i] > 0:
+                        new_prefix_pool = RadixCache(
+                                                    node_id=0,
+                                                    device=storage_medium,
+                                                    page_size=1,
+                                                    capacity = cpu_mem_size[i] * GB_TO_BYTE,
+                                                    kv_size=_pool_kv_bytes_per_token(node2inst_mapping[i]),
+                                                    enable_kv_cache_events=True)
+                        prefix_pools.append(new_prefix_pool)
+                    else:
+                        raise RuntimeError(f"Memory size for prefix storage type {storage_medium} is invalid")
+                # This means one node shares one prefix pool
+                prefix_pool_inst_mapping = inst2node_mapping
 
             # Build the deeper spill-tier pools. FLASH (local SSD) is PER-NODE
             # (per-rack). JBOF (JBOF) and COLDSTORE (network storage) are ONE

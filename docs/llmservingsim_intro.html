@@ -233,6 +233,7 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
     <tr><td class="num">--enable-prefix-caching</td><td>Reuse a previously-computed prompt prefix's KV instead of recomputing it.</td></tr>
     <tr><td class="num">--enable-prefix-sharing</td><td>Let the deep tiers (CPU/FLASH/JBOF/COLDSTORE) be shared across instances — required to use them.</td></tr>
     <tr><td class="num">--prefix-storage</td><td>Deepest tier a reused prefix may live in: the chain is NPU→CPU→FLASH→JBOF→COLDSTORE; the named tier and everything shallower are active, deeper is unused.</td></tr>
+    <tr><td class="num">--cpu-scope</td><td><code>per_node</code> (default) = one CPU pool per rack, shared by its GPUs. <code>per_instance</code> = each GPU gets its own private CPU pool (real per-GPU host memory, e.g. Vera Rubin's 1 CPU : 2 GPU); cross-GPU reuse then routes to the pod-wide JBOF/COLDSTORE instead of CPU. See §4.</td></tr>
     <tr><td class="num">--max-num-seqs</td><td>Max concurrent sequences batched per GPU (8). Caps in-flight KV so the NPU isn't over-committed.</td></tr>
     <tr><td class="num">--output</td><td>Per-request CSV (arrival, TTFT, TPOT, ITL, latency…) — the raw data behind the summary table.</td></tr>
   </table>
@@ -272,6 +273,19 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
   and <span class="pill tag-flash">FLASH</span> are per-rack; <span class="pill tag-jbof">JBOF</span> and
   <span class="pill tag-cold">COLDSTORE</span> are one pool shared across the whole pod. (These specific
   numbers are a proportionally-scaled Vera Rubin — see §5.)</p>
+  <div class="box note">
+    <div class="t">CPU scope — <code>--cpu-scope per_node</code> (default) vs <code>per_instance</code></div>
+    By default the <span class="pill tag-cpu">CPU</span> tier is <b>one pool per rack, shared by all its
+    GPUs</b>, so a prefix computed on one GPU can be reused from CPU by another. Real hardware often
+    attaches host memory <em>per GPU</em> (Vera Rubin pairs 1 Vera CPU with 2 Rubin GPUs over private
+    NVLink-C2C LPDDR). Passing <code>--cpu-scope per_instance</code> gives <b>each GPU its own private CPU
+    pool</b> (sized at the rack's <code>cpu_mem</code>, so total CPU scales with GPUs-per-rack). The
+    consequence is faithful: <b>cross-GPU</b> prefix reuse can no longer be served from CPU and instead
+    routes to the pod-wide <span class="pill tag-jbof">JBOF</span>/<span class="pill tag-cold">COLDSTORE</span>
+    pool — exactly how a real pod shares KV across GPUs (via pooled CMX/flash, not host DRAM). Same-GPU
+    reuse still hits CPU. On the 2-GPU example this splits a 39-token reuse into 20 (same-GPU→CPU) + 19
+    (cross-GPU→JBOF); with <code>per_node</code> all 39 come from CPU.
+  </div>
 
   <h3><span class="step">2c</span>The input workload file</h3>
   <p>The dataset is one JSON object per request:</p>

@@ -1,34 +1,44 @@
 # #!/bin/bash
 
-# --- [2026-07-08] TIER-FIDELITY CHECK: NPU->CPU baseline vs full tier chain ----------
-#   Same small dataset (example_trace.jsonl), only --prefix-storage differs (CPU vs
-#   COLDSTORE). The workload is far too small to overflow CPU, so NOTHING should spill
-#   into the deep tiers and BOTH runs MUST report identical prefix hits / reload / TTFT.
-#   BUGFIX behind this check: the shared CPU prefix pool was built with page_size=256
-#   (serving/__main__.py) while every sibling cache uses page_size=1. RadixCache floors
-#   BOTH insert and match to a page_size multiple, so any prefix < 256 tokens was
-#   silently dropped -> the CPU tier retained/served NOTHING (0 hits, 0.00 MB), and
-#   --prefix-storage COLDSTORE only "worked" because the page_size=1 deep tiers caught
-#   the write-through (39 hits via JBOF). Setting the CPU pool to page_size=1 restores
-#   token-granular retention. AFTER THE FIX both runs report: CPU 39 hits (32.5%),
-#   reload 0.02 ms, TTFT mean 14.40 ms; JBOF/COLDSTORE inert (0 hits) in the COLDSTORE
-#   run (served from the shallowest tier = CPU). Fidelity restored.
+# --- [2026-07-08] CPU-SCOPE demo: per-GPU CPU pools (--cpu-scope per_instance) -------
+#   New --cpu-scope flag controls the CPU (host-DRAM) prefix-cache tier topology:
+#     per_node (default)  : ONE CPU pool per rack, shared by all its GPUs.
+#     per_instance        : each GPU gets its OWN private CPU pool (real per-GPU host
+#                           memory, e.g. Vera Rubin 1 CPU : 2 GPU over NVLink-C2C). A
+#                           cross-GPU prefix reuse can no longer be served from CPU and
+#                           instead routes to the pod-wide JBOF/COLDSTORE pool.
+#   On example_trace.jsonl (2 GPUs) a 39-token reuse splits by scope:
+#     per_node     + COLDSTORE : CPU 39, JBOF 0     (all reuse from the shared CPU)     TTFT 14.40
+#     per_instance + COLDSTORE : CPU 20, JBOF 19    (same-GPU->CPU + cross-GPU->JBOF)   TTFT 14.48
+#     per_instance + CPU-only  : CPU 20 (16.7%)     (cross-GPU reuse lost, no shared)   TTFT 14.68
+#   Omitting --cpu-scope (per_node) is byte-identical to the previous behavior.
 
-# RUN A -- NPU->CPU baseline
+# per_instance + full tier chain: cross-GPU reuse pooled through JBOF (faithful Vera Rubin)
+python -m serving \
+  --cluster-config 'configs/cluster/single_node_multi_instance_tier.json' \
+  --dtype float16 --block-size 16 \
+  --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+  --cpu-scope per_instance \
+  --dataset 'workloads/example_trace.jsonl' \
+  --output 'outputs/prefix_cpu_pool_run_tier.csv'
+
+# --- [2026-07-08] TIER-FIDELITY CHECK: NPU->CPU baseline vs full tier chain (prev) ----
+#   Same small dataset (example_trace.jsonl), only --prefix-storage differs (CPU vs
+#   COLDSTORE). Fixed the shared CPU prefix pool page_size (256 -> 1); afterwards both
+#   runs report CPU 39 hits (32.5%), reload 0.02 ms, TTFT 14.40 ms (JBOF/COLDSTORE inert,
+#   served from the shallowest tier = CPU). Fidelity restored.
 # python -m serving \
 #   --cluster-config 'configs/cluster/single_node_multi_instance_tier.json' \
 #   --dtype float16 --block-size 16 \
 #   --enable-prefix-caching --enable-prefix-sharing --prefix-storage CPU \
 #   --dataset 'workloads/example_trace.jsonl' \
 #   --output 'outputs/prefix_cpu_pool_run_small.csv'
-
-# RUN B -- full tier chain (NPU->CPU->JBOF->COLDSTORE); deep tiers must stay inert here
-python -m serving \
-  --cluster-config 'configs/cluster/single_node_multi_instance_tier.json' \
-  --dtype float16 --block-size 16 \
-  --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
-  --dataset 'workloads/example_trace.jsonl' \
-  --output 'outputs/prefix_cpu_pool_run_tier.csv'
+# python -m serving \
+#   --cluster-config 'configs/cluster/single_node_multi_instance_tier.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+#   --dataset 'workloads/example_trace.jsonl' \
+#   --output 'outputs/prefix_cpu_pool_run_tier.csv'
 
 
 # ============================================================================
