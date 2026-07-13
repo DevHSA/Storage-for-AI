@@ -276,16 +276,31 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
   <div class="box note">
     <div class="t">CPU scope — <code>--cpu-scope per_node</code> (default) vs <code>per_instance</code></div>
     By default the <span class="pill tag-cpu">CPU</span> tier is <b>one pool per rack, shared by all its
-    GPUs</b>, so a prefix computed on one GPU can be reused from CPU by another. Real hardware often
-    attaches host memory <em>per GPU</em> (Vera Rubin pairs 1 Vera CPU with 2 Rubin GPUs over private
-    NVLink-C2C LPDDR). Passing <code>--cpu-scope per_instance</code> gives <b>each GPU its own private CPU
-    pool</b> (sized at the rack's <code>cpu_mem</code>, so total CPU scales with GPUs-per-rack). The
-    consequence is faithful: <b>cross-GPU</b> prefix reuse can no longer be served from CPU and instead
-    routes to the pod-wide <span class="pill tag-jbof">JBOF</span>/<span class="pill tag-cold">COLDSTORE</span>
-    pool — exactly how a real pod shares KV across GPUs (via pooled CMX/flash, not host DRAM). Same-GPU
-    reuse still hits CPU. On the 2-GPU example this splits a 39-token reuse into 20 (same-GPU→CPU) + 19
-    (cross-GPU→JBOF); with <code>per_node</code> all 39 come from CPU.
+    GPUs</b> (holding the node total = sum of the GPUs' <code>cpu_mem</code>), so a prefix computed on one
+    GPU can be reused from CPU by another. Real hardware often attaches host memory <em>per GPU</em>
+    (Vera Rubin pairs 1 Vera CPU with 2 Rubin GPUs over private NVLink-C2C LPDDR). Passing
+    <code>--cpu-scope per_instance</code> gives <b>each GPU its own private CPU pool</b> — sized at the
+    GPU's own <code>cpu_mem</code> if the instance declares one, otherwise the rack's <code>cpu_mem</code>
+    <b>split evenly</b> among its GPUs (so the node total is unchanged). The consequence is faithful:
+    <b>cross-GPU</b> prefix reuse can no longer be served from CPU and instead routes to the pod-wide
+    <span class="pill tag-jbof">JBOF</span>/<span class="pill tag-cold">COLDSTORE</span> pool — exactly how a
+    real pod shares KV across GPUs (via pooled CMX/flash, not host DRAM). Same-GPU reuse still hits CPU. On
+    the 2-GPU example this splits a 39-token reuse into 20 (same-GPU→CPU) + 19 (cross-GPU→JBOF); with
+    <code>per_node</code> all 39 come from CPU.
   </div>
+  <p>To model <b>heterogeneous or explicit per-GPU host memory</b>, add a <code>cpu_mem</code> block inside
+  an instance (exactly like <code>npu_mem</code>). It overrides the split default and sizes that GPU's CPU
+  pool directly; under <code>per_node</code> the shared pool becomes the <em>sum</em> of the instances'
+  <code>cpu_mem</code>. The node-level <code>cpu_mem</code> is still required (it drives power, PIM and the
+  ASTRA-Sim host-memory model) and acts as the default when an instance omits its own:</p>
+  <pre class="code">"instances": [
+  { "model_name": "…", "npu_mem": { "mem_size": 96, "mem_bw": 1597, "mem_latency": 0 },
+    <span class="cm">"cpu_mem": { "mem_size": 300 },</span>   <span class="cm"># this GPU's private host DRAM (GiB); bw/latency default to the node's</span>
+    "tp_size": 1 },
+  { "model_name": "…", "npu_mem": { "mem_size": 96, "mem_bw": 1597, "mem_latency": 0 },
+    <span class="cm">"cpu_mem": { "mem_size": 200 },</span>   <span class="cm"># -> per_instance: pools 300+200; per_node: one shared 500 GiB pool</span>
+    "tp_size": 1 }
+]</pre>
   <p>Run the two side by side (same tiny trace, only the scope differs) and compare the per-tier hit table:</p>
   <pre class="code"><span class="cm"># per_node (default): one shared CPU pool per rack — cross-GPU reuse served from CPU</span>
 python -m serving \

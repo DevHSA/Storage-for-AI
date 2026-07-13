@@ -392,6 +392,13 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
     cpu_mem_size = []
     cpu_mem_bw = []
     cpu_mem_latency = []
+    # Optional PER-INSTANCE CPU (host-DRAM) overrides for the prefix-cache tier,
+    # ordered by global instance_id (parallel to `placement`). A value is the raw
+    # declared number, or None when the instance did not declare its own cpu_mem
+    # (the node-level cpu_mem then applies — see __main__ for the resolution).
+    inst_cpu_mem_size = []
+    inst_cpu_mem_bw = []
+    inst_cpu_mem_latency = []
     cpu_mem_enabled = False  # only one type of cpu memory config is supported for now (latency & bandwidth)
     node_id = 0
     inst_id = 0
@@ -544,7 +551,23 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
             for key in mem_required_keys:
                 if key not in npu_mem:
                     raise KeyError(f"Missing required key '{key}' in 'npu_mem' configuration.")
-            
+
+            # Optional per-instance CPU (host-DRAM) override for the prefix-cache
+            # tier — like npu_mem, but for host memory. Records the raw value (or
+            # None); the node-level cpu_mem still drives power/PIM/ASTRA-Sim. When
+            # declared, mem_bw/mem_latency fall back to the node's values.
+            _inst_cpu = instance.get("cpu_mem")
+            if _inst_cpu is not None:
+                if "mem_size" not in _inst_cpu:
+                    raise KeyError("Missing required key 'mem_size' in instance 'cpu_mem' configuration.")
+                inst_cpu_mem_size.append(_inst_cpu["mem_size"])
+                inst_cpu_mem_bw.append(_inst_cpu.get("mem_bw", cpu_mem["mem_bw"]))
+                inst_cpu_mem_latency.append(_inst_cpu.get("mem_latency", cpu_mem["mem_latency"]))
+            else:
+                inst_cpu_mem_size.append(None)
+                inst_cpu_mem_bw.append(None)
+                inst_cpu_mem_latency.append(None)
+
             if not npu_mem_enabled:
                 # insert to system configuration
                 with open(system_config_path) as f:
@@ -722,6 +745,9 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
         "cpu_mem_size": cpu_mem_size,
         "cpu_mem_bw": cpu_mem_bw,
         "cpu_mem_latency": cpu_mem_latency,
+        "inst_cpu_mem_size": inst_cpu_mem_size,
+        "inst_cpu_mem_bw": inst_cpu_mem_bw,
+        "inst_cpu_mem_latency": inst_cpu_mem_latency,
         "cxl_mem_size": cxl_mem_size,
         "tier_configs": tier_configs,
         "power_modeling": power_modeling,

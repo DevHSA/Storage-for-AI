@@ -242,11 +242,13 @@ def main():
                         help="scope of the CPU (host-DRAM) prefix-cache tier when --enable-prefix-sharing "
                         "is on. 'per_node' (default, unchanged): ONE CPU pool per node, shared by all its "
                         "GPUs -- a request on any GPU can reuse another GPU's offloaded KV directly from "
-                        "CPU. 'per_instance': each GPU gets its OWN private CPU pool (sized at that node's "
-                        "cpu_mem), modeling real per-GPU host memory (e.g. Vera Rubin's 1 CPU : 2 GPU "
+                        "CPU; the pool holds the node total (sum of the GPUs' cpu_mem). 'per_instance': each "
+                        "GPU gets its OWN private CPU pool, sized at the GPU's own cpu_mem if the instance "
+                        "block declares one, else the node's cpu_mem split evenly among its GPUs (node total "
+                        "unchanged). Models real per-GPU host memory (e.g. Vera Rubin's 1 CPU : 2 GPU "
                         "NVLink-C2C LPDDR); cross-GPU reuse can then NOT be served from CPU and instead "
-                        "routes to the pod-wide JBOF/COLDSTORE tiers. Total CPU capacity scales with "
-                        "instances-per-node in per_instance mode.")
+                        "routes to the pod-wide JBOF/COLDSTORE tiers. Declare per-instance `cpu_mem` in an "
+                        "instance block (like `npu_mem`) to give GPUs different host-memory sizes.")
     parser.add_argument('--enable-local-offloading', action='store_true', default=False,
                         help='enable weight offloading to local (NPU) memory. '
                         'Recommended to disable unless weight memory access is not counted in profiling')
@@ -354,6 +356,9 @@ def main():
     cpu_mem_size = cluster["cpu_mem_size"]
     cpu_mem_bw = cluster["cpu_mem_bw"]
     cpu_mem_latency = cluster["cpu_mem_latency"]
+    inst_cpu_mem_size = cluster["inst_cpu_mem_size"]          # per-instance override or None
+    inst_cpu_mem_bw = cluster["inst_cpu_mem_bw"]
+    inst_cpu_mem_latency = cluster["inst_cpu_mem_latency"]
     power_modeling = cluster["power_modeling"]
     power_configs = cluster["power_configs"]
     pim_models = cluster["pim_models"]
@@ -378,6 +383,28 @@ def main():
     for inst_id, node_id in inst2node_mapping.items():
         node2inst_mapping[node_id].append(inst_id)
     node2inst_mapping = dict(node2inst_mapping)
+
+    # ---- Per-instance CPU (host-DRAM) resolution for the prefix-cache tier ----
+    # `--cpu-scope` + optional per-instance `cpu_mem` decide CPU-pool sizing:
+    #   sched_cpu_*   -> value handed to each scheduler/MemoryModel (drives the
+    #                    NON-shared offload path & the reload metric): the declared
+    #                    per-instance value, else the node's cpu_mem (UNCHANGED default).
+    #   pool_cpu_size -> the prefix-cache POOL capacity per instance: declared, else
+    #                    the node's cpu_mem SPLIT evenly among its GPUs (node total
+    #                    unchanged). per_node sums these into the one shared pool.
+    def _node_gpus(nid):
+        return len(node2inst_mapping[nid])
+    def _node_cpu_declared(nid):
+        return any(inst_cpu_mem_size[j] is not None for j in node2inst_mapping[nid])
+    sched_cpu_size = [inst_cpu_mem_size[i] if inst_cpu_mem_size[i] is not None
+                      else cpu_mem_size[inst2node_mapping[i]] for i in range(num_instances)]
+    sched_cpu_bw = [inst_cpu_mem_bw[i] if inst_cpu_mem_bw[i] is not None
+                    else cpu_mem_bw[inst2node_mapping[i]] for i in range(num_instances)]
+    sched_cpu_latency = [inst_cpu_mem_latency[i] if inst_cpu_mem_latency[i] is not None
+                         else cpu_mem_latency[inst2node_mapping[i]] for i in range(num_instances)]
+    pool_cpu_size = [inst_cpu_mem_size[i] if inst_cpu_mem_size[i] is not None
+                     else cpu_mem_size[inst2node_mapping[i]] / _node_gpus(inst2node_mapping[i])
+                     for i in range(num_instances)]
 
     prefix_pool_inst_mapping = {}
     for i in range(num_instances):
@@ -458,33 +485,37 @@ def main():
             # dropped -> the NPU->CPU baseline would retain/serve nothing.
             if cpu_scope == 'per_instance':
                 # PER-INSTANCE (per-GPU) CPU: each GPU gets its OWN private CPU pool,
-                # sized at its node's cpu_mem, modeling real per-GPU host memory (e.g.
-                # Vera Rubin's 1 CPU : 2 GPU NVLink-C2C LPDDR). Because the pools are
-                # private, cross-GPU prefix reuse CANNOT be served from CPU and falls
-                # through to the pod-wide JBOF/COLDSTORE tiers -- the faithful path.
-                # Total CPU capacity therefore scales with instances-per-node.
+                # modeling real per-GPU host memory (e.g. Vera Rubin's 1 CPU : 2 GPU
+                # NVLink-C2C LPDDR). Capacity = the instance's own `cpu_mem` if it
+                # declares one, else the node's cpu_mem SPLIT evenly among its GPUs
+                # (so the node total is unchanged; see pool_cpu_size). Because the
+                # pools are private, cross-GPU prefix reuse CANNOT be served from CPU
+                # and falls through to the pod-wide JBOF/COLDSTORE tiers -- faithful.
                 for inst_id in range(num_instances):
-                    node = inst2node_mapping[inst_id]
-                    if cpu_mem_size[node] <= 0:
+                    if pool_cpu_size[inst_id] <= 0:
                         raise RuntimeError(f"Memory size for prefix storage type {storage_medium} is invalid")
                     prefix_pools.append(RadixCache(
                                                 node_id=0,
                                                 device=storage_medium,
                                                 page_size=1,
-                                                capacity=cpu_mem_size[node] * GB_TO_BYTE,
+                                                capacity=pool_cpu_size[inst_id] * GB_TO_BYTE,
                                                 kv_size=_pool_kv_bytes_per_token([inst_id]),
                                                 enable_kv_cache_events=True))
                 # Each instance maps to its own private pool.
                 prefix_pool_inst_mapping = {i: i for i in range(num_instances)}
             else:
                 # PER-NODE (default): ONE CPU pool per node, shared by all its GPUs.
+                # Capacity = the sum of the node's per-instance cpu_mem when any GPU
+                # declares its own (else the node-level cpu_mem, byte-exact default).
                 for i in range(num_prefix_pool):
-                    if cpu_mem_size[i] > 0:
+                    _node_cap = (sum(pool_cpu_size[j] for j in node2inst_mapping[i])
+                                 if _node_cpu_declared(i) else cpu_mem_size[i])
+                    if _node_cap > 0:
                         new_prefix_pool = RadixCache(
                                                     node_id=0,
                                                     device=storage_medium,
                                                     page_size=1,
-                                                    capacity = cpu_mem_size[i] * GB_TO_BYTE,
+                                                    capacity = _node_cap * GB_TO_BYTE,
                                                     kv_size=_pool_kv_bytes_per_token(node2inst_mapping[i]),
                                                     enable_kv_cache_events=True)
                         prefix_pools.append(new_prefix_pool)
@@ -593,7 +624,7 @@ def main():
             instance["model_name"], instance["node_id"], instance_id,
             inst_cfg["max_num_seqs"], inst_cfg["max_num_batched_tokens"],
             instance["num_npus"], instance["tp_size"], instance["pp_size"],
-            instance["npu_mem"]["mem_size"], cpu_mem_size[instance["node_id"]],
+            instance["npu_mem"]["mem_size"], sched_cpu_size[instance_id],
             inst2npu_mapping[instance_id], instance["pd_type"],
             inst_cfg["fp"], inst_cfg["block_size"], num_req,
             inst_cfg["prioritize_prefill"], inst_cfg["enable_prefix_caching"],
@@ -603,8 +634,8 @@ def main():
             ep_size=instance.get("ep_total", 1),
             kv_cache_dtype=inst_cfg["kv_cache_dtype"],
             deep_tiers=deep_tier_specs_by_inst.get(instance_id, []),
-            cpu_mem_bw=cpu_mem_bw[instance["node_id"]],
-            cpu_mem_latency=cpu_mem_latency[instance["node_id"]],
+            cpu_mem_bw=sched_cpu_bw[instance_id],
+            cpu_mem_latency=sched_cpu_latency[instance_id],
         ))
 
     # Controller for astra-sim process communication
@@ -964,7 +995,13 @@ def main():
                     node_cpu_usage = 0
                     inst_usage = []
                     if any_prefix_caching and enable_prefix_sharing and storage_medium == "CPU":
-                        node_cpu_usage = prefix_pools[node_id].total_size() * prefix_pools[node_id].kv_size
+                        if cpu_scope == 'per_instance':
+                            # prefix_pools is indexed by GLOBAL instance_id in this
+                            # scope -> sum the node's own instances' private pools.
+                            node_cpu_usage = sum(prefix_pools[j].total_size() * prefix_pools[j].kv_size
+                                                 for j in inst_ids)
+                        else:
+                            node_cpu_usage = prefix_pools[node_id].total_size() * prefix_pools[node_id].kv_size
                     else:
                         for inst_id in inst_ids:
                             inst_cpu_usage = schedulers[inst_id].memory.cpu_used
@@ -981,7 +1018,10 @@ def main():
                         f"{cpu_util:.3f} % Used "
                     )
                     if any_prefix_caching and enable_prefix_sharing and storage_medium == "CPU":
-                        line += prefix_pools[node_id].format_prefix_info()
+                        if cpu_scope == 'per_instance':
+                            line += "".join(prefix_pools[j].format_prefix_info() for j in inst_ids)
+                        else:
+                            line += prefix_pools[node_id].format_prefix_info()
 
                     if (any_prefix_caching and enable_prefix_sharing and storage_medium == "CPU") or (len(inst_ids) == 1):
                         print_markup(line)
