@@ -318,6 +318,20 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
         }
         cxl_mem_size = cxl["mem_size"]
 
+    # Pod-wide deep tiers (JBOF/COLDSTORE) MAY be declared ONCE at the top level
+    # (they are physically pooled across the whole pod) instead of repeated inside
+    # every node. A top-level block is the pod TOTAL capacity; legacy per-node
+    # blocks are summed to the same total. FLASH stays per-node (it is node-local).
+    _TOPLEVEL_POD_TIERS = {"JBOF": "jbof_mem", "COLDSTORE": "coldstore_mem"}
+    toplevel_pod_tiers = {}
+    for _tn, _tk in _TOPLEVEL_POD_TIERS.items():
+        _tl = cluster_config.get(_tk)
+        if _tl is not None:
+            for key in mem_required_keys:
+                if key not in _tl:
+                    raise KeyError(f"Missing required key '{key}' in top-level '{_tk}' configuration.")
+            toplevel_pod_tiers[_tn] = _tl
+
     # Check if all required arguments are present in each node
     required_keys = ["num_instances", "cpu_mem", "instances"]
     # Check if power modeling is specified in each node
@@ -491,6 +505,10 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
         # Parse optional deep spill tiers for this node.
         for _tname, _tkey in tier_key_map:
             _blk = node_config.get(_tkey)
+            if _blk is not None and _tname in toplevel_pod_tiers:
+                raise KeyError(
+                    f"'{_tkey}' is declared BOTH at the top level and inside a node; "
+                    f"declare pod-wide tiers once at the top level only.")
             if _blk is not None:
                 for _k in ["mem_size", "mem_bw", "mem_latency"]:
                     if _k not in _blk:
@@ -677,6 +695,19 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
 
         
         node_id += 1
+
+    # Distribute each top-level pod tier evenly across nodes so the existing
+    # per-node summing (pod-wide capacity = sum of node contributions) reconstructs
+    # the declared pod TOTAL; bw/latency/link/type/num_devices replicate per node.
+    for _tname, _tl in toplevel_pod_tiers.items():
+        _per = _tl["mem_size"] / num_nodes
+        tier_configs[_tname]["size"] = [_per] * num_nodes
+        tier_configs[_tname]["mem_bw"] = [_tl["mem_bw"]] * num_nodes
+        tier_configs[_tname]["mem_latency"] = [_tl["mem_latency"]] * num_nodes
+        tier_configs[_tname]["link_bw"] = [_tl.get("link_bw", 0)] * num_nodes
+        tier_configs[_tname]["link_latency"] = [_tl.get("link_latency", 0)] * num_nodes
+        tier_configs[_tname]["memory_type"] = [_tl.get("memory_type")] * num_nodes
+        tier_configs[_tname]["num_devices"] = [_tl.get("num_devices")] * num_nodes
 
     total_npu = sum(
         inst["num_npus"] if inst["pd_type"] != "prefill"

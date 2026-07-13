@@ -273,6 +273,12 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
   and <span class="pill tag-flash">FLASH</span> are per-rack; <span class="pill tag-jbof">JBOF</span> and
   <span class="pill tag-cold">COLDSTORE</span> are one pool shared across the whole pod. (These specific
   numbers are a proportionally-scaled Vera Rubin — see §5.)</p>
+  <p>Because <span class="pill tag-jbof">JBOF</span> and <span class="pill tag-cold">COLDSTORE</span> are
+  physically pooled across the whole pod, on a multi-node config you can declare each of them <b>once at
+  the top level</b> (a sibling of <code>nodes</code>) instead of repeating it in every node — the top-level
+  value is the pod <b>total</b>. Per-node blocks still work and are <em>summed</em> to the same total
+  (declaring a tier in both places is an error). <span class="pill tag-cpu">CPU</span> and
+  <span class="pill tag-flash">FLASH</span> stay per-node (they are rack-local).</p>
   <div class="box note">
     <div class="t">CPU scope — <code>--cpu-scope per_node</code> (default) vs <code>per_instance</code></div>
     By default the <span class="pill tag-cpu">CPU</span> tier is <b>one pool per rack, shared by all its
@@ -309,9 +315,11 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
     2 superchips (4 GPUs, 2 CPUs); a <b>node/rack</b> = 2 trays. Both files are <b>2 nodes × 4
     superchip-instances = 16 GPUs</b>, run with <code>--cpu-scope per_instance</code> so each superchip
     owns its 1.5&nbsp;TB CPU and cross-superchip KV reuse flows through the pod-wide
-    <span class="pill tag-jbof">JBOF</span>/<span class="pill tag-cold">COLDSTORE</span>. Real bandwidth/latency
-    live in <em>both</em>; only capacity differs — <code>actual</code> uses the real 288&nbsp;GiB / 1.5&nbsp;TiB /
-    128&nbsp;TiB sizes, <code>small</code> shrinks them so <code>example_trace.jsonl</code> runs in seconds.
+    <span class="pill tag-jbof">JBOF</span>/<span class="pill tag-cold">COLDSTORE</span> — which these files
+    declare <b>once at the top level</b> (the pod total) rather than per node. Real bandwidth/latency
+    live in <em>both</em>; only capacity differs — <code>actual</code> uses the real per-GPU 288&nbsp;GiB HBM /
+    1.5&nbsp;TiB CPU-per-superchip / 256&nbsp;TiB pod-wide JBOF sizes, <code>small</code> shrinks them so
+    <code>example_trace.jsonl</code> runs in seconds.
     (We use <b>TP=2</b> rather than TP=4-per-tray because the profiler ships measured compute data only for
     tp=1/tp=2 — and TP=2 happens to match the superchip exactly. TP=4 would need <code>tp=4</code> profiler
     data generated on a 4-GPU box.)
