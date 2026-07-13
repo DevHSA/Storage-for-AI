@@ -9,7 +9,7 @@
             "num_instances": 1,
             "cpu_mem": { "mem_size": 0.01, "mem_bw": 1200, "mem_latency": 120 },
             "instances": [
-                { "model_name": "meta-llama/Llama-3.1-70B", "hardware": "RTXPRO6000",
+                { "model_name": "meta-llama/Llama-3.1-8B", "hardware": "RTXPRO6000",
                   "npu_mem": { "mem_size": 24, "mem_bw": 22000, "mem_latency": 10 },
                   "cpu_mem": { "mem_size": 0.005 }, "pd_type": null, "tp_size": 1 }
             ]
@@ -18,7 +18,7 @@
             "num_instances": 1,
             "cpu_mem": { "mem_size": 0.01, "mem_bw": 1200, "mem_latency": 120 },
             "instances": [
-                { "model_name": "meta-llama/Llama-3.1-70B", "hardware": "RTXPRO6000",
+                { "model_name": "meta-llama/Llama-3.1-8B", "hardware": "RTXPRO6000",
                   "npu_mem": { "mem_size": 24, "mem_bw": 22000, "mem_latency": 10 },
                   "cpu_mem": { "mem_size": 0.005 }, "pd_type": null, "tp_size": 1 }
             ]

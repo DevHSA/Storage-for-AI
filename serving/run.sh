@@ -13,13 +13,23 @@
 #                          hits 13/17/9 (32.5%); COLDSTORE reload 4.41 ms.
 #   The test config drastically shrinks CPU/JBOF (0.005/0.01 GiB) so the tiny example
 #   overflows and the cascade is observable.
-python -m serving \
-  --cluster-config 'configs/cluster/vera_rubin_tray_2n1g_test.json' \
+
+# python -m serving \
+#   --cluster-config 'configs/cluster/vera_rubin_tray_2n1g_test.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage CPU \
+#   --cpu-scope per_instance --tier-policy exclusive \
+#   --dataset 'workloads/example_trace.jsonl' \
+#   --output 'outputs/vera_rubin_tray_2n1g_test_exclusive_CPU.csv'
+
+
+  python -m serving \
+  --cluster-config 'configs/cluster/vera_rubin_tray_2n1g_test_70B.json' \
   --dtype float16 --block-size 16 \
   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
   --cpu-scope per_instance --tier-policy exclusive \
   --dataset 'workloads/example_trace.jsonl' \
-  --output 'outputs/vera_rubin_tray_2n1g_test_exclusive.csv'
+  --output 'outputs/vera_rubin_tray_2n1g_test_exclusive_COLDSTORE.csv'
 
 # --- CONFIG REFERENCE: VERA RUBIN TRAY (2 nodes x 2 trays x 2 superchips) --------------
 #   superchip = 1 Vera CPU (1.5 TB LPDDR5X) + 2 Rubin GPUs (288 GB HBM4) = ONE TP=2
