@@ -17,7 +17,13 @@ class Device(Enum):
     COLDSTORE = 6
 
 class MemoryModel():
-    def __init__(self, model, instance_id, node_id, num_npus, tp_size, npu_mem, cpu_mem, block_size, fp, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, cxl_mem=0, ep_size=1, pp_size=1, kv_cache_dtype='auto', deep_tiers=None, cpu_mem_bw=0, cpu_mem_latency=0):
+    def __init__(self, model, instance_id, node_id, num_npus, tp_size, npu_mem, cpu_mem, block_size, fp, enable_prefix_caching, enable_prefix_sharing, prefix_pool, prefix_storage, cxl_mem=0, ep_size=1, pp_size=1, kv_cache_dtype='auto', deep_tiers=None, cpu_mem_bw=0, cpu_mem_latency=0, tier_policy='inclusive'):
+        # tier_policy: 'inclusive' (default) = a cached prefix is written through
+        # to CPU AND every deeper tier at once (a copy lives in each). 'exclusive'
+        # = cascading / write-back-on-eviction: a prefix is written only to the
+        # CPU (shallowest storage tier) and pushed one level deeper ONLY when a
+        # tier evicts it, so it lives in exactly one storage tier at a time.
+        self.tier_policy = tier_policy
         self.model = model
         self.node_id = node_id
         self.instance_id = instance_id
@@ -133,6 +139,15 @@ class MemoryModel():
                 self.deep_tiers.append(tier)
                 self._deep_tier_by_device[spec['device']] = tier
                 self.tier_hit_tokens[spec['device']] = 0
+
+        # Ordered below-NPU spill chain for the 'exclusive' (cascading) policy:
+        # CPU (second tier) then the deep tiers in order. A prefix enters at CPU
+        # and is pushed one level deeper only when a tier evicts it.
+        self._spill_chain = []
+        if (self.tier_policy == 'exclusive' and enable_prefix_caching
+                and prefix_storage is not None and hasattr(self, 'second_tier_prefix_cache')):
+            self._spill_chain = [self.second_tier_prefix_cache] + [t['cache'] for t in self.deep_tiers]
+
     def get_weight(self):
         """Per-GPU model weight in bytes.
 
@@ -414,10 +429,15 @@ class MemoryModel():
             # should lock evicted kv cache in cpu
             self.second_tier_prefix_cache.inc_lock_ref(new_last_node)
             req.cpu_last_node = new_last_node
-            # Write through to the deeper spill tiers so an NPU eviction is
-            # retained progressively deeper in the hierarchy.
-            for tier in self.deep_tiers:
-                tier['cache'].cache_unfinished_req(req, update=False)
+            if self.tier_policy == 'exclusive':
+                # Cascading: this evicted prefix is LOCKED in CPU, so it will not
+                # cascade until it is unlocked and later evicted. Just rebalance.
+                self._cascade_spill()
+            else:
+                # Inclusive: write through to the deeper spill tiers so an NPU
+                # eviction is retained progressively deeper in the hierarchy.
+                for tier in self.deep_tiers:
+                    tier['cache'].cache_unfinished_req(req, update=False)
             self.apply_kv_cache_events()
 
     def evictable_size(self, device):
@@ -488,9 +508,14 @@ class MemoryModel():
                 self.npu_prefix_cache.pretty_print()
         elif device == Device.CPU or device == Device.CXL:
             self.second_tier_prefix_cache.cache_unfinished_req(req)
-            # Write through to deeper spill tiers (FLASH/JBOF/COLDSTORE).
-            for tier in self.deep_tiers:
-                tier['cache'].cache_unfinished_req(req, update=False)
+            if self.tier_policy == 'exclusive':
+                # Cascading: no eager deep-tier copy; overflow is pushed one
+                # level deeper only when the CPU tier evicts.
+                self._cascade_spill()
+            else:
+                # Inclusive write-through into every deeper spill tier.
+                for tier in self.deep_tiers:
+                    tier['cache'].cache_unfinished_req(req, update=False)
             if self.logger.isEnabledFor(logging.DEBUG):
                 # print(f"cache_unfinished_req of req {req.id}")
                 # print(f"===============AFTER INSERT: {self.second_tier_prefix_cache.device} PREFIX CAHCE at pid={os.getpid()} tid={threading.get_ident()} pool_id={id(self.second_tier_prefix_cache)}, size={self.second_tier_prefix_cache.total_size()}=================")
@@ -529,9 +554,12 @@ class MemoryModel():
                 self.npu_prefix_cache.pretty_print()
         elif device == Device.CPU or device == Device.CXL:
             self.second_tier_prefix_cache.cache_finished_req(req)
-            # Write through to deeper spill tiers (FLASH/JBOF/COLDSTORE).
-            for tier in self.deep_tiers:
-                tier['cache'].cache_finished_req(req)
+            if self.tier_policy == 'exclusive':
+                self._cascade_spill()
+            else:
+                # Inclusive write-through into every deeper spill tier.
+                for tier in self.deep_tiers:
+                    tier['cache'].cache_finished_req(req)
             if self.logger.isEnabledFor(logging.DEBUG):
                 # print(f"cache_finished_req of req {req.id}")
                 # print(f"===============AFTER INSERT: {self.second_tier_prefix_cache.device} PREFIX CAHCE at pid={os.getpid()} tid={threading.get_ident()} pool_id={id(self.second_tier_prefix_cache)}, size={self.second_tier_prefix_cache.total_size()}=================")
@@ -555,17 +583,34 @@ class MemoryModel():
         # Each cache instance carries its own bytes-per-token in kv_size:
         # per-rank for NPU, full-cluster for the second-tier pool.
         space_needed = (bytes + cache.kv_size - 1) // cache.kv_size
-        cache.evict(space_needed)
+        if device == Device.CPU and self.tier_policy == 'exclusive' and self._spill_chain:
+            # Cascading: evicted CPU content is written back one tier deeper
+            # instead of being dropped.
+            self._evict_tier(0, space_needed)
+        else:
+            cache.evict(space_needed)
 
         self.apply_kv_cache_events()
 
     # -------------------- Deep spill tiers (FLASH/JBOF/COLDSTORE) --------------------
 
     def make_room_deep_tiers(self, total_size):
-        """Evict LRU from each deep spill tier so it can hold ``total_size``
-        full-cluster bytes. Cascading spillover: content a shallower tier drops
-        is retained here until this tier also fills (then it is dropped)."""
+        """Keep the deep spill tiers within capacity.
+        INCLUSIVE policy: each deep tier independently drops LRU to fit
+        ``total_size`` (a copy of it survives in the tier above/below).
+        EXCLUSIVE policy: a tier's over-capacity content is cascaded one level
+        deeper (write-back-on-eviction); only the last tier drops."""
         if not self.enable_prefix_caching:
+            return
+        if self.tier_policy == 'exclusive':
+            if not self._spill_chain:
+                return
+            for i in range(len(self._spill_chain)):
+                cache = self._spill_chain[i]
+                cap_tok = (cache.capacity // cache.kv_size) if cache.kv_size else 0
+                over = cache.total_size() - cap_tok
+                if over > 0:
+                    self._evict_tier(i, over)
             return
         for tier in self.deep_tiers:
             cache = tier['cache']
@@ -574,6 +619,41 @@ class MemoryModel():
                 need = total_size - avail
                 space_needed = (need + cache.kv_size - 1) // cache.kv_size
                 cache.evict(space_needed)
+
+    def _evict_tier(self, idx, tokens):
+        """Evict ~``tokens`` tokens from spill-chain[idx] and CASCADE them into
+        the next deeper tier (write-back-on-eviction). If that tier then exceeds
+        capacity, cascade recursively; the last tier's overflow is dropped."""
+        chain = self._spill_chain
+        if idx >= len(chain) or tokens <= 0:
+            return
+        cache = chain[idx]
+        if idx + 1 < len(chain):
+            evicted = cache.evict_and_collect(tokens)   # full-prefix token seqs
+            nxt = chain[idx + 1]
+            for seq in evicted:
+                if seq:
+                    nxt.insert(seq)                      # push one level deeper
+            cap_tok = (nxt.capacity // nxt.kv_size) if nxt.kv_size else 0
+            over = nxt.total_size() - cap_tok
+            if over > 0:
+                self._evict_tier(idx + 1, over)
+        else:
+            cache.evict(tokens)                          # last tier -> dropped
+
+    def _cascade_spill(self):
+        """After a write into the CPU (shallowest storage) tier, push any
+        over-capacity content down the chain (exclusive/cascading policy). A
+        no-op while tiers have room, so small workloads keep the deeper tiers
+        EMPTY -- nothing is written past CPU until CPU actually fills."""
+        chain = self._spill_chain
+        if not chain:
+            return
+        cpu = chain[0]
+        cap_tok = (cpu.capacity // cpu.kv_size) if cpu.kv_size else 0
+        over = cpu.total_size() - cap_tok
+        if over > 0:
+            self._evict_tier(0, over)
 
     def tier_load_latency_ns(self, device, load_bytes):
         """Python-side reload latency (ns) for a hit served from a deep tier.

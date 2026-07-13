@@ -249,6 +249,14 @@ def main():
                         "NVLink-C2C LPDDR); cross-GPU reuse can then NOT be served from CPU and instead "
                         "routes to the pod-wide JBOF/COLDSTORE tiers. Declare per-instance `cpu_mem` in an "
                         "instance block (like `npu_mem`) to give GPUs different host-memory sizes.")
+    parser.add_argument('--tier-policy', type=str, choices=['inclusive', 'exclusive'], default='inclusive',
+                        help="how a cached prefix occupies the below-NPU storage tiers (CPU/FLASH/JBOF/"
+                        "COLDSTORE). 'inclusive' (default, unchanged): write-through -- a copy is written "
+                        "into CPU AND every deeper tier at once. 'exclusive': cascading / write-back-on-"
+                        "eviction -- a prefix is written only to CPU (the shallowest storage tier) and pushed "
+                        "one level deeper ONLY when a tier evicts it, so it lives in exactly one storage tier "
+                        "and deeper tiers stay empty until the ones above fill. Closer to real tiered-KV "
+                        "systems; MEM_STORE write cost is not modeled either way (yet).")
     parser.add_argument('--enable-local-offloading', action='store_true', default=False,
                         help='enable weight offloading to local (NPU) memory. '
                         'Recommended to disable unless weight memory access is not counted in profiling')
@@ -324,6 +332,7 @@ def main():
     enable_prefix_sharing=args.enable_prefix_sharing
     prefix_storage=args.prefix_storage
     cpu_scope=args.cpu_scope
+    tier_policy=args.tier_policy
     dataset=args.dataset
     output_file=args.output
     is_init = not args.skip_prefill
@@ -636,6 +645,7 @@ def main():
             deep_tiers=deep_tier_specs_by_inst.get(instance_id, []),
             cpu_mem_bw=sched_cpu_bw[instance_id],
             cpu_mem_latency=sched_cpu_latency[instance_id],
+            tier_policy=tier_policy,
         ))
 
     # Controller for astra-sim process communication

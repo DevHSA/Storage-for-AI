@@ -234,6 +234,7 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
     <tr><td class="num">--enable-prefix-sharing</td><td>Let the deep tiers (CPU/FLASH/JBOF/COLDSTORE) be shared across instances — required to use them.</td></tr>
     <tr><td class="num">--prefix-storage</td><td>Deepest tier a reused prefix may live in: the chain is NPU→CPU→FLASH→JBOF→COLDSTORE; the named tier and everything shallower are active, deeper is unused.</td></tr>
     <tr><td class="num">--cpu-scope</td><td><code>per_node</code> (default) = one CPU pool per rack, shared by its GPUs. <code>per_instance</code> = each GPU gets its own private CPU pool (real per-GPU host memory, e.g. Vera Rubin's 1 CPU : 2 GPU); cross-GPU reuse then routes to the pod-wide JBOF/COLDSTORE instead of CPU. See §4.</td></tr>
+    <tr><td class="num">--tier-policy</td><td><code>inclusive</code> (default) = a cached prefix is written through to CPU <em>and</em> every deeper tier at once. <code>exclusive</code> = cascading / write-back-on-eviction: written only to CPU, pushed one tier deeper <em>only</em> when a tier evicts — so deeper tiers stay empty until the ones above fill (closer to real tiered-KV systems). See §6.</td></tr>
     <tr><td class="num">--max-num-seqs</td><td>Max concurrent sequences batched per GPU (8). Caps in-flight KV so the NPU isn't over-committed.</td></tr>
     <tr><td class="num">--output</td><td>Per-request CSV (arrival, TTFT, TPOT, ITL, latency…) — the raw data behind the summary table.</td></tr>
   </table>
@@ -853,9 +854,25 @@ jbof_load       1          LOCAL      0           JBOF:0      27493990     LOCAL
   </svg>
   <figcaption>Diagram 4 — the radix (prefix) tree; shared prefixes share nodes.</figcaption>
   </figure>
-  <p>When cached, a prefix is written <b>inclusively</b> — into CPU and, by write-through, every deeper
-  tier. So one prefix can live in NPU, CPU and JBOF at once; as shallow tiers fill and evict, the deeper
-  copy survives, and a later reuse is served from the shallowest tier that still holds it.</p>
+  <p>How a cached prefix occupies the tiers is set by <code>--tier-policy</code>:</p>
+  <ul style="font-size:14px;color:#333;margin:6px 0">
+    <li><b><code>inclusive</code> (default)</b> — <b>write-through</b>: a prefix is written into CPU and, at
+    the same time, a copy into every deeper tier. So one prefix can live in NPU, CPU and JBOF at once; a
+    later reuse is served from the shallowest tier that still holds it. Simple, but it eagerly fills the
+    deeper tiers (write amplification a real system would avoid), and lets cross-GPU reuse be served from
+    the shared pool immediately (the copy is already there).</li>
+    <li><b><code>exclusive</code></b> — <b>cascading / write-back-on-eviction</b> (closer to real tiered-KV
+    systems like NVIDIA Dynamo / LMCache): a prefix is written <em>only</em> to CPU (the shallowest storage
+    tier) and pushed one level deeper <em>only</em> when a tier evicts it. So it lives in exactly one storage
+    tier, and <b>the deeper tiers stay empty until the ones above fill</b> — on a small workload nothing
+    spills past CPU. The trade-off: cross-GPU reuse via the pooled tier only happens once eviction pressure
+    has actually pushed content down to it. (Verified on a tiny-capacity config: content cascades
+    CPU→JBOF→COLDSTORE and reuse is served from wherever each prefix landed.)</li>
+  </ul>
+  <p><span style="color:var(--muted)">Either way the tier <em>write</em> cost (a MEM_STORE on the fabric) is
+  not yet charged to the timeline — only the read/reload is. So both policies model reload (read) latency
+  faithfully; the write-amplification cost of <code>inclusive</code> is real hardware but not yet in the
+  sim.</span></p>
   <div class="box note">
     <div class="t">Fidelity invariant — all spill tiers index at token granularity</div>
     Every below-NPU cache (CPU, FLASH, JBOF, COLDSTORE) is a radix tree keyed at <b>one-token</b>

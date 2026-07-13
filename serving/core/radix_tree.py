@@ -388,6 +388,50 @@ class RadixCache():
 
             self._record_remove_event(x)
 
+    def _full_key(self, node: TreeNode):
+        """Reconstruct the full prefix token-id list (root -> node) by walking
+        parent pointers. Used to re-insert an evicted leaf into a deeper tier
+        (cascading / write-back-on-eviction)."""
+        parts = []
+        cur = node
+        while cur is not None and cur is not self.root_node and cur.key:
+            parts.append(cur.key)
+            cur = cur.parent
+        parts.reverse()
+        full = []
+        for p in parts:
+            full.extend(p)
+        return full
+
+    def evict_and_collect(self, num_tokens: int):
+        """Like evict(), but RETURN the full-prefix token ids (root -> leaf) of
+        every evicted leaf, so a caller can re-insert them into a deeper tier
+        (exclusive / cascading tier policy). Locked leaves are skipped, exactly
+        like evict()."""
+        leaves = self._collect_leaves()
+        heapq.heapify(leaves)
+
+        num_evicted = 0
+        collected = []
+        while num_evicted < num_tokens and len(leaves):
+            x = heapq.heappop(leaves)
+
+            if x == self.root_node:
+                break
+            if x.lock_ref > 0:
+                continue
+
+            full = self._full_key(x)
+            if full:
+                collected.append(full)
+            num_evicted += len(x.key)
+            self._delete_leaf(x)
+            if len(x.parent.children) == 0:
+                heapq.heappush(leaves, x.parent)
+
+            self._record_remove_event(x)
+        return collected
+
     def inc_lock_ref(self, node: TreeNode):
         delta = 0
         while node != self.root_node:

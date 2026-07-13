@@ -1,27 +1,47 @@
 # #!/bin/bash
 
-# --- [2026-07-08] VERA RUBIN TRAY (faithful topology): 2 nodes x 2 trays x 2 superchips
-#   A superchip = 1 Vera CPU (1.5 TB LPDDR5X) + 2 Rubin GPUs (288 GB HBM4) = ONE TP=2
-#   instance. A tray = 2 superchips (4 GPUs, 2 CPUs). A node/rack = 2 trays. So this is
-#   2 nodes x 4 superchips = 16 GPUs, 8 TP=2 instances. Run with --cpu-scope per_instance
-#   so each superchip gets its OWN 1.5 TB CPU; cross-superchip KV reuse then flows through
-#   the pod-wide JBOF/CMX (not host DRAM) -- exactly how a real Vera Rubin pod shares KV.
-#   Two configs, real bw/latency in BOTH, only CAPACITY differs:
-#     vera_rubin_tray_actual : NPU 288 GiB/GPU, CPU 1536 GiB/superchip (6144/node),
-#                              JBOF 131072 GiB/node (16 TiB x 8 GPUs), COLDSTORE ~1 PiB
-#     vera_rubin_tray_small  : NPU 24, CPU 32, JBOF 256, COLDSTORE 2048 GiB (runs example fast)
-#   TP=2 (not 4): the profiler only has measured tp=1/tp=2 compute data for
-#   RTXPRO6000/Llama-3.1-8B, and TP=2 maps 1:1 to the superchip anyway. Both verified on
-#   example_trace (per_instance): 8 instances x 2 NPUs, cross-superchip reuse -> JBOF 39
-#   hits (32.5%), TTFT 6.34 ms; timing identical for small vs actual (only capacity differs).
+# --- [2026-07-08] TIER-POLICY: exclusive (cascading / write-back-on-eviction) ---------
+#   NEW --tier-policy {inclusive,exclusive}. inclusive (default, unchanged): write-through
+#   -- a cached prefix is copied into CPU AND every deeper tier at once. exclusive: a
+#   prefix is written only to CPU and pushed ONE tier deeper ONLY when a tier evicts it,
+#   so the deeper tiers stay EMPTY until the ones above fill (closer to real tiered-KV
+#   systems; MEM_STORE write cost not modeled yet). Verified on example_trace (2n1g,
+#   per_instance, COLDSTORE):
+#     inclusive          : CPU 20 + JBOF 19 (32.5%); JBOF & COLD each 81.88 MB (eager copies)
+#     exclusive (big CPU): CPU 20 only (16.7%); JBOF & COLD EMPTY (0 MB -- nothing spills)
+#     exclusive (tiny caps -> vera_rubin_tray_2n1g_test.json): CASCADE CPU->JBOF->COLDSTORE,
+#                          hits 13/17/9 (32.5%); COLDSTORE reload 4.41 ms.
+#   The test config drastically shrinks CPU/JBOF (0.005/0.01 GiB) so the tiny example
+#   overflows and the cascade is observable.
 python -m serving \
-  --cluster-config 'configs/cluster/vera_rubin_tray_small.json' \
+  --cluster-config 'configs/cluster/vera_rubin_tray_2n1g_test.json' \
   --dtype float16 --block-size 16 \
   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
-  --cpu-scope per_instance \
+  --cpu-scope per_instance --tier-policy exclusive \
   --dataset 'workloads/example_trace.jsonl' \
-  --output 'outputs/vera_rubin_tray_small.csv'
-# swap the config to vera_rubin_tray_actual.json for the real-capacity version.
+  --output 'outputs/vera_rubin_tray_2n1g_test_exclusive.csv'
+
+# --- CONFIG REFERENCE: VERA RUBIN TRAY (2 nodes x 2 trays x 2 superchips) --------------
+#   superchip = 1 Vera CPU (1.5 TB LPDDR5X) + 2 Rubin GPUs (288 GB HBM4) = ONE TP=2
+#   instance; tray = 2 superchips; node = 2 trays. vera_rubin_tray_{small,actual}.json are
+#   2 nodes x 4 superchips = 16 GPUs. TP=2 (profiler has tp=1/tp=2 only; TP=2 == superchip).
+
+# --- [2026-07-08] Fidelity check on vera_rubin_tray_2n1g.json (previous active) --------
+#   Add "--tier-policy exclusive" to either run to switch from write-through to cascading.
+# python -m serving \
+#   --cluster-config 'configs/cluster/vera_rubin_tray_2n1g.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage CPU \
+#   --cpu-scope per_instance \
+#   --dataset 'workloads/example_trace.jsonl' \
+#   --output 'outputs/vera_rubin_tray_2n1g_CPU.csv'
+# python -m serving \
+#   --cluster-config 'configs/cluster/vera_rubin_tray_2n1g.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+#   --cpu-scope per_instance \
+#   --dataset 'workloads/example_trace.jsonl' \
+#   --output 'outputs/vera_rubin_tray_2n1g_COLDSTORE.csv'
 
 # --- [2026-07-08] CPU-SCOPE demo: per-GPU CPU pools (--cpu-scope per_instance) (prev) --
 #   per_node (default): one shared CPU pool per rack. per_instance: each GPU its own pool;
