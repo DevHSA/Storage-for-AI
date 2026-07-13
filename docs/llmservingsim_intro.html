@@ -286,6 +286,25 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
     reuse still hits CPU. On the 2-GPU example this splits a 39-token reuse into 20 (same-GPU→CPU) + 19
     (cross-GPU→JBOF); with <code>per_node</code> all 39 come from CPU.
   </div>
+  <p>Run the two side by side (same tiny trace, only the scope differs) and compare the per-tier hit table:</p>
+  <pre class="code"><span class="cm"># per_node (default): one shared CPU pool per rack — cross-GPU reuse served from CPU</span>
+python -m serving \
+  --cluster-config configs/cluster/single_node_multi_instance_tier.json \
+  --dtype float16 --block-size 16 --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage COLDSTORE --cpu-scope per_node \
+  --dataset workloads/example_trace.jsonl --output outputs/cpu_scope_per_node.csv
+
+<span class="cm"># per_instance: each GPU its own private CPU pool — cross-GPU reuse routes to pooled JBOF</span>
+python -m serving \
+  --cluster-config configs/cluster/single_node_multi_instance_tier.json \
+  --dtype float16 --block-size 16 --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage COLDSTORE --cpu-scope per_instance \
+  --dataset workloads/example_trace.jsonl --output outputs/cpu_scope_per_instance.csv</pre>
+  <p><span style="color:var(--muted)">Expected in the <em>Prefix Caching Results (per tier)</em> table:
+  <code>per_node</code> → CPU 39 hits, JBOF 0 (TTFT ~14.40 ms); <code>per_instance</code> → CPU 20 +
+  JBOF 19 (TTFT ~14.48 ms). Omitting <code>--cpu-scope</code> is identical to <code>per_node</code>.
+  Drop <code>--cpu-scope per_instance</code> onto <em>any</em> of the §9 example commands to switch that
+  run to per-GPU CPU.</span></p>
 
   <h3><span class="step">2c</span>The input workload file</h3>
   <p>The dataset is one JSON object per request:</p>
