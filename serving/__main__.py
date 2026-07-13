@@ -446,7 +446,13 @@ def main():
                     new_prefix_pool = RadixCache(
                                                 node_id=0,
                                                 device=storage_medium,
-                                                page_size=256,
+                                                page_size=1,   # token granularity, like the CXL pool,
+                                                               # the deep tiers, and the non-shared CPU
+                                                               # second-tier (memory_model.py). A larger
+                                                               # page floors every insert AND match to a
+                                                               # multiple of it, so any prefix shorter than
+                                                               # one page is silently dropped -> the NPU->CPU
+                                                               # baseline would retain/serve nothing.
                                                 capacity = cpu_mem_size[i] * GB_TO_BYTE,
                                                 kv_size=_pool_kv_bytes_per_token(node2inst_mapping[i]),
                                                 enable_kv_cache_events=True)

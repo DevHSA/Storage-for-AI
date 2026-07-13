@@ -1,5 +1,36 @@
 # #!/bin/bash
 
+# --- [2026-07-08] TIER-FIDELITY CHECK: NPU->CPU baseline vs full tier chain ----------
+#   Same small dataset (example_trace.jsonl), only --prefix-storage differs (CPU vs
+#   COLDSTORE). The workload is far too small to overflow CPU, so NOTHING should spill
+#   into the deep tiers and BOTH runs MUST report identical prefix hits / reload / TTFT.
+#   BUGFIX behind this check: the shared CPU prefix pool was built with page_size=256
+#   (serving/__main__.py) while every sibling cache uses page_size=1. RadixCache floors
+#   BOTH insert and match to a page_size multiple, so any prefix < 256 tokens was
+#   silently dropped -> the CPU tier retained/served NOTHING (0 hits, 0.00 MB), and
+#   --prefix-storage COLDSTORE only "worked" because the page_size=1 deep tiers caught
+#   the write-through (39 hits via JBOF). Setting the CPU pool to page_size=1 restores
+#   token-granular retention. AFTER THE FIX both runs report: CPU 39 hits (32.5%),
+#   reload 0.02 ms, TTFT mean 14.40 ms; JBOF/COLDSTORE inert (0 hits) in the COLDSTORE
+#   run (served from the shallowest tier = CPU). Fidelity restored.
+
+# RUN A -- NPU->CPU baseline
+# python -m serving \
+#   --cluster-config 'configs/cluster/single_node_multi_instance_tier.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage CPU \
+#   --dataset 'workloads/example_trace.jsonl' \
+#   --output 'outputs/prefix_cpu_pool_run_small.csv'
+
+# RUN B -- full tier chain (NPU->CPU->JBOF->COLDSTORE); deep tiers must stay inert here
+python -m serving \
+  --cluster-config 'configs/cluster/single_node_multi_instance_tier.json' \
+  --dtype float16 --block-size 16 \
+  --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+  --dataset 'workloads/example_trace.jsonl' \
+  --output 'outputs/prefix_cpu_pool_run_tier.csv'
+
+
 # ============================================================================
 #  CLAUDE INVESTIGATION RUNS  (most recent first; only the TOP run is active,
 #  older investigation runs are commented out per request)
@@ -22,13 +53,19 @@
 #     gen: make_pod_prop_mini_config.py <racks> <jbof|nojbof> <out> <gpr> 3.9 0.85 18.8 188
 #          make_rack_fill.py <out.jsonl> <n_ctx> 2048 8 4 3000
 #     Active = the simple 8-GPU JBOF first-run (the doc's opening example).
-python -m serving \
-  --cluster-config 'configs/cluster/pod_prop_mini_8gpu_jbof.json' \
-  --dtype float16 --block-size 16 \
-  --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
-  --max-num-seqs 8 \
-  --dataset 'workloads/pod_prop_8gpu.jsonl' \
-  --output 'outputs/pod_prop_8gpu_jbof.csv'
+
+
+# python -m serving \
+#   --cluster-config 'configs/cluster/pod_prop_mini_8gpu_jbof.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+#   --max-num-seqs 8 \
+#   --dataset 'workloads/pod_prop_8gpu.jsonl' \
+#   --output 'outputs/pod_prop_8gpu_jbof.csv'
+
+
+
+
 # WITHOUT JBOF: --cluster-config 'configs/cluster/pod_prop_mini_8gpu_nojbof.json' --output 'outputs/pod_prop_8gpu_nojbof.csv'
 # 72-GPU rack: pod_prop_mini_72gpu_{jbof,nojbof}.json + workloads/pod_prop_72gpu.jsonl (3200 ctx)
 #

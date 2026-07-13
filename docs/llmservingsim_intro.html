@@ -780,6 +780,17 @@ jbof_load       1          LOCAL      0           JBOF:0      27493990     LOCAL
   <p>When cached, a prefix is written <b>inclusively</b> — into CPU and, by write-through, every deeper
   tier. So one prefix can live in NPU, CPU and JBOF at once; as shallow tiers fill and evict, the deeper
   copy survives, and a later reuse is served from the shallowest tier that still holds it.</p>
+  <div class="box note">
+    <div class="t">Fidelity invariant — all spill tiers index at token granularity</div>
+    Every below-NPU cache (CPU, FLASH, JBOF, COLDSTORE) is a radix tree keyed at <b>one-token</b>
+    granularity (<code>page_size = 1</code>). This matters because a radix tree floors <em>both</em> what it
+    stores and what it matches to a whole number of pages: a coarser page would silently drop any reused
+    prefix shorter than one page. Keeping every tier token-granular guarantees the <b>same</b> prefix is
+    retained and served identically no matter which tier is the storage target — so on a workload too small
+    to overflow CPU, adding JBOF/COLDSTORE changes nothing (they stay empty and reuse is served from CPU),
+    and TTFT is identical with or without the deep tiers. (Only the on-NPU cache pages at the KV
+    <code>block_size</code>, matching how the NPU allocates KV blocks.)
+  </div>
 
   <h3>The eviction rule</h3>
   <p>When a tier is full it evicts the <b>least-recently-used</b> entries — but only <b>unlocked</b>
