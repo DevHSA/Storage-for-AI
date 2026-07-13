@@ -877,9 +877,12 @@ jbof_load       1          LOCAL      0           JBOF:0      27493990     LOCAL
     every deeper tier stay empty</b> (nothing to spill); once the NPU fills it demotes
     NPU→CPU→JBOF→COLDSTORE, NPU filling first. Two consequences worth knowing: (1) cross-GPU / cross-instance
     reuse via a pooled tier only kicks in once eviction pressure has pushed content down to it — a prefix
-    still resident in its owner's NPU is not yet reusable by a sibling; (2) if a shallow tier is saturated
-    with locked (in-flight / preempted) entries, an evicted prefix that cannot fit is simply dropped rather
-    than forced in (NPU/KV is recomputable). (Verified: on a large-NPU workload nothing spills — CPU stays
+    still resident in its owner's NPU is not yet reusable by a sibling; (2) an evicted prefix that cannot fit the
+    tier below is simply dropped rather than forced in (KV is recomputable) — this happens if that tier is
+    saturated with locked (in-flight / preempted) entries, or is sized <b>smaller than a single prefix</b>.
+    A prefix costs ~2&times; the bytes in CPU/JBOF/COLDSTORE (both TP ranks, 256&nbsp;KB/token) that it does in
+    the NPU (128&nbsp;KB/token per rank), so to make the cascade actually <em>reach</em> a tier, give that tier
+    at least one prefix's worth of capacity. (Verified: on a large-NPU workload nothing spills — CPU stays
     0%; shrink the NPU and content cascades NPU→CPU→JBOF→COLDSTORE with the NPU filling first.)</li>
   </ul>
   <p><span style="color:var(--muted)">Either way the tier <em>write</em> cost (a MEM_STORE on the fabric) is
