@@ -85,7 +85,7 @@ def _device_label(insts, nodes, scope):
     if scope == "pooled":
         return "pod-wide"
     if len(insts) == 1:
-        return f"GPU {insts[0]}"
+        return f"inst {insts[0]}"      # one cache per instance (a TP=N superchip)
     if len(nodes) == 1:
         return f"node {nodes[0]}"
     return f"insts {insts}"
@@ -102,10 +102,11 @@ def _gather_tier(name, cache_getter, schedulers, scope):
             continue
         k = id(c)
         if k not in seen:
-            seen[k] = {"cache": c, "insts": [], "nodes": set()}
+            seen[k] = {"cache": c, "insts": [], "nodes": set(), "gpus": 0}
             order.append(k)
         seen[k]["insts"].append(getattr(s, "instance_id", -1))
         seen[k]["nodes"].add(getattr(s, "node_id", -1))
+        seen[k]["gpus"] += getattr(s, "num_npus", 1)
     if not order:
         return None
     devices, total_used, total_cap = [], 0, 0
@@ -115,7 +116,7 @@ def _gather_tier(name, cache_getter, schedulers, scope):
         used = _safe_call(c.total_memory_usage, 0)
         cap = getattr(c, "capacity", 0) or 0
         devices.append({"label": _device_label(sorted(rec["insts"]), sorted(rec["nodes"]), scope),
-                        "used_bytes": used, "cap_bytes": cap, "pct": _pct(used, cap)})
+                        "gpus": rec["gpus"], "used_bytes": used, "cap_bytes": cap, "pct": _pct(used, cap)})
         total_used += used
         total_cap += cap
     return {"name": name, "scope": scope, "devices": devices,

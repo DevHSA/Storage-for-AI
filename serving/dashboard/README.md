@@ -64,7 +64,12 @@ Point at a non-default snapshot via the sidebar or `LLMSS_DASHBOARD_FILE`.
 - **Over-sim-time charts** — throughput (prompt vs decode tok/s); **KV-spill
   memory** (stacked area of CPU → deep tiers, so you watch the cascade fill);
   **TTFT** mean; **TBT** mean.
-- **Memory by tier (now)** — per tier: explicit scope badge — NPU **per-GPU**,
+- **Memory by tier (now)** — the tiered **KV cache** (not total HBM). The **NPU**
+  row is KV-cache only: its capacity = per-GPU HBM **minus resident model weights**
+  (so a TP=2 Qwen3-32B on 62 GiB GPUs shows ~31.5 GiB KV, not 62); the weights are
+  in the *NPU HBM* table. Each per-device entry is **one instance** (a TP=N
+  superchip spanning N GPUs, shown as `inst k · N×GPU`). Per tier: explicit scope
+  badge — NPU **per-GPU**,
   CPU **per-instance / per-node** (by `--cpu-scope`), FLASH **per-node**,
   JBOF/COLDSTORE **pooled (pod-wide)** — total used/cap bar, and for per-device
   tiers the per-device split with a total.

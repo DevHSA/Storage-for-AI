@@ -209,18 +209,22 @@ function renderTiers(tiers){
     let devs="";
     if(!pooled && (t.devices||[]).length>1){
       devs = `<div class="devs">`+t.devices.map(d=>`<div class="dev">
-        <span class="sub">${esc(d.label)}</span>
+        <span class="sub">${esc(d.label)}${d.gpus>1?` · ${d.gpus}×GPU`:''}</span>
         <div class="bar db"><div style="width:${Math.min(100,d.pct).toFixed(1)}%;background:${col};opacity:.8"></div></div>
         <span class="amt" style="text-align:right">${fb(d.used_bytes)} / ${fb(d.cap_bytes)}</span>
       </div>`).join("")+`</div>`;
     }
+    const note = t.name==="NPU"
+      ? `<div class="sub" style="font-size:11px;margin-top:2px">KV-cache tier only — capacity = per-GPU HBM − resident model weights. Full HBM (weights + KV) is in the <b>NPU HBM</b> table below.</div>`
+      : "";
+    const unit = (t.name==="CPU"||t.name==="NPU") ? "instance" : "device";
     return `<div class="tier">
       <div class="hd"><span class="nm" style="color:${col}">${esc(t.name)}</span>
         <span class="scope ${pooled?'pooled':''}">${esc(scopeTxt)}</span></div>
       <div class="bar"><div style="width:${Math.min(100,t.total_pct).toFixed(1)}%;background:${col}"></div></div>
       <div class="amt" style="margin-top:3px">${fb(t.total_used_bytes)} / ${fb(t.total_cap_bytes)}
-        &nbsp;(${(t.total_pct||0).toFixed(2)}%)${pooled?"":` · total across ${(t.devices||[]).length} device(s)`}</div>
-      ${devs}</div>`;
+        &nbsp;(${(t.total_pct||0).toFixed(2)}%)${pooled?"":` · total across ${(t.devices||[]).length} ${unit}(s)`}</div>
+      ${note}${devs}</div>`;
   }).join("");
 }
 
@@ -321,9 +325,11 @@ async function poll(){
   LAST=d; renderDrill();
 
   renderTable($("hbm"),
-    [{h:"instance",k:"i"},{h:"node",k:"n"},{h:"GPUs",k:"g"},{h:"used",k:"u"},{h:"cap",k:"c"},{h:"% used",k:"p"},{h:"weight",k:"w"}],
+    [{h:"instance",k:"i"},{h:"node",k:"n"},{h:"GPUs",k:"g"},{h:"used/GPU",k:"u"},{h:"HBM/GPU",k:"c"},{h:"% used",k:"p"},{h:"weight/GPU",k:"w"}],
     (d.npu_hbm||[]).map(h=>({i:h.instance,n:h.node,g:h.num_npus,u:fb(h.used_bytes),c:fb(h.cap_bytes),
       p:(h.pct||0).toFixed(2),w:fb(h.weight_bytes)})));
+  $("hbm").insertAdjacentHTML("beforeend",
+    `<div class="sub" style="font-size:11px;margin-top:6px">Values are <b>per GPU</b> (per TP rank). A TP=N instance spans N GPUs, each holding weight/N of the model + its KV shard.</div>`);
 
   $("freshness").innerHTML = status==="done"?"run finished":`<span class="dot"></span>wall ${(d.wall_seconds||0).toFixed(1)}s`;
   $("foot").innerHTML=`source <code>/api/metrics</code> · status <b>${esc(status)}</b> · latency over ${fi(lat.finished)} finished · ${hist.length} timeline points`;
