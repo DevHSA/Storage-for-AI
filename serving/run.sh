@@ -17,6 +17,32 @@
 #   --dataset 'workloads/example_trace.jsonl' \
 #   --output 'outputs/dash_demo.csv'
 
+# --- [2026-07-14] EXCLUSIVE now a full VICTIM CACHE (NPU->CPU is spill, not eager) -----
+#   Previously "exclusive" only governed the CPU->deep boundary; the NPU->CPU write was
+#   still eager write-through, so a tiny CPU pool filled while the huge NPU sat empty.
+#   Now exclusive is exclusive ALL THE WAY UP: a finished prefix stays resident in NPU and
+#   is demoted to CPU only when the NPU actually evicts it (LRU / preemption). While the
+#   NPU is far from full, CPU + deep tiers stay EMPTY; once NPU fills it cascades
+#   NPU->CPU->JBOF->COLDSTORE (NPU fills first). Demotion is bounded -- if a shallow tier is
+#   saturated with locked (in-flight/preempted) entries, the evicted prefix is DROPPED
+#   (KV is recomputable) rather than forced in (which would overflow cpu_used and abort).
+#   INCLUSIVE default unchanged (eager write-through, 32.5% hits on example_trace).
+#   Verified: user's huge-NPU cmd -> CPU/deep EMPTY, NPU-only (symptom gone). Shrink the NPU
+#   (vera_rubin_tray_2n1g_test_8B_tinynpu.json, npu_mem 15.0 GiB -> ~40 MB KV) to SEE the
+#   cascade: NPU fills to ~73% first, then demotes NPU->CPU->JBOF->COLDSTORE.
+#   NOTE: under exclusive+sharing, cross-instance reuse via a pooled tier is DEFERRED until
+#   the owner evicts the prefix (so small workloads that reuse before any spill show 0% hits
+#   -- faithful victim-cache behavior). Per-node console hit-ratio line omits CPU under
+#   exclusive (cosmetic; the dashboard + per-tier summary via tier_hit_report are correct).
+# python -m serving \
+#   --cluster-config 'configs/cluster/vera_rubin_tray_2n1g_test_8B_tinynpu.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+#   --cpu-scope per_instance --tier-policy exclusive \
+#   --dashboard --log-interval 0.05 \
+#   --dataset 'workloads/example_trace.jsonl' \
+#   --output 'outputs/tinynpu_victim_cascade.csv'
+
 # --- [2026-07-08] TIER-POLICY: exclusive (cascading / write-back-on-eviction) ---------
 #   NEW --tier-policy {inclusive,exclusive}. inclusive (default, unchanged): write-through
 #   -- a cached prefix is copied into CPU AND every deeper tier at once. exclusive: a
@@ -47,7 +73,7 @@
   --dtype float16 --block-size 16 \
   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
   --cpu-scope per_instance --tier-policy exclusive \
-  --dashboard --log-interval 0.1 \
+  --dashboard --log-interval 0.05 \
   --dataset 'workloads/example_trace.jsonl' \
   --output 'outputs/vera_rubin_tray_2n1g_test_exclusive_COLDSTORE.csv'
 

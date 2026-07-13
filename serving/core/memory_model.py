@@ -507,13 +507,18 @@ class MemoryModel():
                 # print(f"===============NPU PREFIX CAHCE of Instance[{self.instance_id}]=================")
                 self.npu_prefix_cache.pretty_print()
         elif device == Device.CPU or device == Device.CXL:
-            self.second_tier_prefix_cache.cache_unfinished_req(req)
             if self.tier_policy == 'exclusive':
-                # Cascading: no eager deep-tier copy; overflow is pushed one
-                # level deeper only when the CPU tier evicts.
-                self._cascade_spill()
+                # Victim-cache (exclusive all the way up): the CPU tier is NOT
+                # eagerly mirrored from the NPU. It is populated ONLY when the NPU
+                # actually evicts/demotes a prefix (evict_prefix_cache -> _evict_npu)
+                # or preempts an in-flight request (storage_cache_evicted_req). So
+                # while the NPU is far from full, CPU (and everything below) stays
+                # empty -- unlike inclusive write-through, which mirrors eagerly.
+                pass
             else:
-                # Inclusive write-through into every deeper spill tier.
+                # Inclusive write-through: mirror the prefix into CPU AND every
+                # deeper spill tier.
+                self.second_tier_prefix_cache.cache_unfinished_req(req)
                 for tier in self.deep_tiers:
                     tier['cache'].cache_unfinished_req(req, update=False)
             if self.logger.isEnabledFor(logging.DEBUG):
@@ -553,10 +558,13 @@ class MemoryModel():
                 print(f"===============NPU PREFIX CACHE of Instance[{self.instance_id}]=================")
                 self.npu_prefix_cache.pretty_print()
         elif device == Device.CPU or device == Device.CXL:
-            self.second_tier_prefix_cache.cache_finished_req(req)
             if self.tier_policy == 'exclusive':
-                self._cascade_spill()
+                # Victim-cache: no eager NPU->CPU mirror (see cache_unfinished_req).
+                # The finished prefix stays resident in the NPU cache and is
+                # demoted into CPU only when the NPU later evicts it.
+                pass
             else:
+                self.second_tier_prefix_cache.cache_finished_req(req)
                 # Inclusive write-through into every deeper spill tier.
                 for tier in self.deep_tiers:
                     tier['cache'].cache_finished_req(req)
@@ -587,6 +595,10 @@ class MemoryModel():
             # Cascading: evicted CPU content is written back one tier deeper
             # instead of being dropped.
             self._evict_tier(0, space_needed)
+        elif device == Device.NPU and self.tier_policy == 'exclusive' and self._spill_chain:
+            # Victim-cache: NPU-evicted prefixes are DEMOTED into the CPU tier
+            # (and cascade deeper if CPU then overflows) instead of being dropped.
+            self._evict_npu(space_needed)
         else:
             cache.evict(space_needed)
 
@@ -619,6 +631,36 @@ class MemoryModel():
                 need = total_size - avail
                 space_needed = (need + cache.kv_size - 1) // cache.kv_size
                 cache.evict(space_needed)
+
+    def _evict_npu(self, tokens):
+        """Exclusive victim-cache: evict ~``tokens`` tokens of UNLOCKED NPU prefix
+        cache and DEMOTE the evicted prefixes into the CPU (second) tier,
+        cascading deeper if CPU overflows. This makes the NPU->CPU boundary
+        exclusive too: a prefix leaves the NPU only to reappear one tier down.
+
+        The demote is BOUNDED by the room CPU can actually reclaim. CPU may be
+        saturated with LOCKED entries (preempted requests parked there by
+        storage_cache_evicted_req), which the cascade cannot evict; force-
+        inserting on top of them would push cpu_used past cpu_mem and abort the
+        sim in allocate(). So each evicted prefix is demoted only if CPU can hold
+        it after cascading its unlocked content deeper; otherwise it is DROPPED
+        (NPU prefixes are recomputable). Inclusive policy never calls this (the
+        NPU copy is redundant -- CPU already holds it via write-through)."""
+        if tokens <= 0 or not self._spill_chain:
+            return
+        cpu = self._spill_chain[0]
+        cap_tok = (cpu.capacity // cpu.kv_size) if cpu.kv_size else 0
+        evicted = self.npu_prefix_cache.evict_and_collect(tokens)  # full-prefix token seqs
+        for seq in evicted:
+            if not seq:
+                continue
+            # Make room by cascading CPU's UNLOCKED content one tier deeper.
+            over = cpu.total_size() + len(seq) - cap_tok
+            if over > 0:
+                self._evict_tier(0, over)
+            # Demote only if it now fits; else drop (CPU saturated with locks).
+            if cpu.total_size() + len(seq) <= cap_tok:
+                cpu.insert(seq)
 
     def _evict_tier(self, idx, tokens):
         """Evict ~``tokens`` tokens from spill-chain[idx] and CASCADE them into
