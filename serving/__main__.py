@@ -26,6 +26,7 @@ from serving.core.config_builder import *
 from serving.core.router import *
 from serving.core.power_model import *
 from serving.core.logger import *
+from serving.core import dashboard
 from serving.core.run_paths import build_run_paths, resolve_run_id
 import sys as flush
 
@@ -257,6 +258,12 @@ def main():
                         "one level deeper ONLY when a tier evicts it, so it lives in exactly one storage tier "
                         "and deeper tiers stay empty until the ones above fill. Closer to real tiered-KV "
                         "systems; MEM_STORE write cost is not modeled either way (yet).")
+    parser.add_argument('--dashboard', action='store_true', default=False,
+                        help='emit a live-metrics JSON snapshot every log interval (and at the end) for '
+                        'the Streamlit dashboard. Off by default (zero overhead). See --dashboard-file.')
+    parser.add_argument('--dashboard-file', type=str, default='outputs/dashboard/live.json',
+                        help='where the live-metrics JSON is written when --dashboard is set '
+                        '(relative paths resolve from the repo root). Default outputs/dashboard/live.json.')
     parser.add_argument('--enable-local-offloading', action='store_true', default=False,
                         help='enable weight offloading to local (NPU) memory. '
                         'Recommended to disable unless weight memory access is not counted in profiling')
@@ -691,6 +698,37 @@ def main():
     total_latency = 0
     req_cnt = 0
 
+    # -------------------- Live dashboard (--dashboard) --------------------
+    dash_enabled = bool(args.dashboard)          # NOTE: `args` is reused as a list
+    dash_file = args.dashboard_file              # inside the loop (subprocess cmd),
+    dash_history = []                            # so capture the flags up front.
+    dash_write_path = None
+    dash_config = None
+    if dash_enabled:
+        # The sim chdirs into astra-sim/ during a run, so a relative output path
+        # needs the same "../" hop the CSV/txt outputs use to land at repo root.
+        _dp = args.dashboard_file
+        dash_write_path = _dp if os.path.isabs(_dp) else f'../{_dp}'
+        dash_config = {
+            "models": sorted({inst["model_name"] for inst in instances}),
+            "num_nodes": num_nodes, "num_instances": num_instances, "total_npu": total_npu,
+            "tp_sizes": sorted({inst["tp_size"] for inst in instances}),
+            "cpu_scope": cpu_scope, "tier_policy": tier_policy,
+            "prefix_storage": str(prefix_storage),
+            "block_size": args.block_size, "dtype": args.dtype,
+            "cluster_config": os.path.basename(args.cluster_config),
+            "dataset": os.path.basename(dataset) if dataset else None,
+        }
+        # Initial snapshot so the dashboard shows the config before the first interval.
+        try:
+            dashboard.write_snapshot(dash_write_path, dashboard.build_snapshot(
+                "starting", clock_ns=0, freq=FREQ, wall_seconds=0.0, config=dash_config,
+                req_cnt=0, total_prompt=0, total_gen=0,
+                requests_total=len(getattr(router, "_pending_requests", [])),
+                schedulers=schedulers, num_nodes=num_nodes, num_instances=num_instances))
+        except Exception:
+            pass
+
     # Set Event Handler that loop with INTERVAL time until first request arrive (for all instances)
     first_arival_time = router.get_first_arrival_time()
     if INTERVAL > first_arival_time:
@@ -961,6 +999,20 @@ def main():
             # store the prompt
             throughput.append((prompt_th*RATIO, gen_th*RATIO))
             last_log += INTERVAL
+            if dash_enabled:
+                dash_history.append({"t_s": last_log / FREQ,
+                                     "prompt_tps": prompt_th * RATIO, "decode_tps": gen_th * RATIO})
+                try:
+                    dashboard.write_snapshot(dash_write_path, dashboard.build_snapshot(
+                        "running", clock_ns=current, freq=FREQ, wall_seconds=time() - start_time,
+                        config=dash_config, req_cnt=req_cnt, total_prompt=total_prompt,
+                        total_gen=total_gen,
+                        requests_total=len(getattr(router, "_pending_requests", [])),
+                        schedulers=schedulers, num_nodes=num_nodes, num_instances=num_instances,
+                        throughput_history=dash_history,
+                        live_prompt_tps=prompt_th * RATIO, live_gen_tps=gen_th * RATIO))
+                except Exception:
+                    pass
             log_time_str = f"[{last_log / FREQ:.1f}s]"
             log_time_len = len(log_time_str)
             log_indent = ' ' * log_time_len + '  '
@@ -1302,6 +1354,21 @@ def main():
     _lat_row("TBT (per-token)", all_tpot)
     _lat_row("E2E latency", all_e2e)
     print_rule()
+
+    # Final dashboard snapshot (status="done") so the live view reflects the end state.
+    if dash_enabled:
+        try:
+            dashboard.write_snapshot(dash_write_path, dashboard.build_snapshot(
+                "done", clock_ns=current, freq=FREQ, wall_seconds=time() - start_time,
+                config=dash_config, req_cnt=req_cnt, total_prompt=total_prompt,
+                total_gen=total_gen,
+                requests_total=len(getattr(router, "_pending_requests", [])),
+                schedulers=schedulers, num_nodes=num_nodes, num_instances=num_instances,
+                throughput_history=dash_history,
+                live_prompt_tps=0.0, live_gen_tps=0.0))
+            print_markup(f"Dashboard live metrics: {dash_file}")
+        except Exception:
+            pass
 
     # Per-instance detail only for small runs (avoids hundreds of blocks at pod scale).
     if num_instances <= 4:

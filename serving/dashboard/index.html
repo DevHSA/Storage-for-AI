@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLMServingSim — live</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121821; --panel2:#0e141c; --line:#1e2733;
+    --txt:#e6edf3; --muted:#8b98a5; --accent:#3fb950; --accent2:#58a6ff;
+    --npu:#3fb950; --cpu:#58a6ff; --flash:#d29922; --jbof:#bc8cff; --cold:#8b98a5;
+    --warn:#d29922; --bad:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:14px;line-height:1.5}
+  .wrap{max-width:1400px;margin:0 auto;padding:18px 22px 60px}
+  h1{font-size:20px;margin:0;display:flex;align-items:center;gap:10px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    margin:26px 0 10px;font-weight:700}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .pill{display:inline-block;padding:2px 12px;border-radius:20px;font-size:12px;font-weight:700}
+  .st-running{background:rgba(63,185,80,.18);color:#56d364;border:1px solid #2ea043}
+  .st-done{background:rgba(88,166,255,.18);color:#79c0ff;border:1px solid #388bfd}
+  .st-starting{background:rgba(210,153,34,.18);color:#e3b341;border:1px solid #bb8009}
+  .st-waiting,.st-error{background:rgba(139,152,165,.15);color:#8b98a5;border:1px solid #30363d}
+  .st-error{color:#ff7b72;border-color:#da3633}
+  .sub{color:var(--muted);font-size:12.5px}
+  .banner{display:flex;gap:26px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:12px 16px;margin-top:12px}
+  .banner div{font-size:13px}.banner b{color:var(--txt)}.banner .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  code{background:#0d1117;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12px;color:#a5d6ff}
+  .progress{height:14px;background:#0d1117;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:12px}
+  .progress > div{height:100%;background:linear-gradient(90deg,#238636,#3fb950);transition:width .4s}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .tile .lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .tile .val{font-size:26px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+  .tile .delta{color:var(--muted);font-size:12px;margin-top:2px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:1000px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .tier{margin:0 0 14px}
+  .tier .hd{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px}
+  .tier .nm{font-weight:700}
+  .scope{font-size:10.5px;padding:1px 8px;border-radius:12px;border:1px solid var(--line);color:var(--muted)}
+  .scope.pooled{color:#79c0ff;border-color:#388bfd}
+  .bar{height:12px;background:#0d1117;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .bar > div{height:100%;transition:width .4s}
+  .tier .amt{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .devs{margin-top:7px;display:grid;gap:5px}
+  .dev{display:grid;grid-template-columns:120px 1fr 120px;align-items:center;gap:8px;font-size:12px}
+  .dev .db{height:8px}
+  table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+  th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+  .idle{opacity:.55}
+  .foot{color:var(--muted);font-size:12px;margin-top:26px;border-top:1px solid var(--line);padding-top:10px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--accent);margin-right:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>📊 LLMServingSim <span class="sub">live metrics</span></h1>
+    <div><span id="status" class="pill st-waiting">waiting</span>
+      <span id="freshness" class="sub" style="margin-left:10px"></span></div>
+  </div>
+  <div id="banner" class="banner"><div class="sub">Waiting for a run started with <code>--dashboard</code>…</div></div>
+  <div class="progress"><div id="progbar" style="width:0%"></div></div>
+  <div id="progtext" class="sub" style="margin-top:6px"></div>
+
+  <div id="tiles" class="tiles"></div>
+
+  <div class="grid2" style="margin-top:8px">
+    <div>
+      <h2>⚡ Throughput over sim time</h2>
+      <div class="card"><div id="chart"></div></div>
+    </div>
+    <div>
+      <h2>🧠 Memory by tier</h2>
+      <div class="card"><div id="tiers"></div></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <h2>🎯 Prefix cache</h2>
+      <div class="card"><div id="prefix"></div></div>
+    </div>
+    <div>
+      <h2>⏱️ Latency (ms)</h2>
+      <div class="card"><div id="latency"></div></div>
+    </div>
+  </div>
+
+  <h2>🖥️ NPU HBM (weight + KV, per instance)</h2>
+  <div class="card"><div id="hbm"></div></div>
+
+  <div id="foot" class="foot"></div>
+</div>
+
+<script>
+const TIER_COLOR = {NPU:"var(--npu)",CPU:"var(--cpu)",FLASH:"var(--flash)",JBOF:"var(--jbof)",COLDSTORE:"var(--cold)"};
+const $ = id => document.getElementById(id);
+const fi = n => (n==null?"0":Math.round(n).toLocaleString());
+function fb(b){ b=+b||0; const u=[["TB",2**40],["GB",2**30],["MB",2**20],["KB",2**10]];
+  for(const [n,d] of u){ if(b>=d) return (b/d).toFixed(2)+" "+n; } return b.toFixed(0)+" B"; }
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function barColor(pct){ return pct>=90?"var(--bad)":pct>=70?"var(--warn)":"var(--accent)"; }
+
+function tile(lbl,val,delta){ return `<div class="tile"><div class="lbl">${lbl}</div>
+  <div class="val">${val}</div>${delta?`<div class="delta">${delta}</div>`:""}</div>`; }
+
+function drawChart(hist){
+  const el=$("chart");
+  if(!hist||hist.length<2){ el.innerHTML=`<div class="sub" style="padding:24px 4px">Collecting samples…
+    (needs ≥2 log intervals — lower <code>--log-interval</code> for denser updates.)</div>`; return; }
+  const W=560,H=240,pad=38;
+  const xs=hist.map(p=>p.t_s), maxX=Math.max(...xs), minX=Math.min(...xs);
+  const maxY=Math.max(1,...hist.map(p=>Math.max(p.prompt_tps||0,p.decode_tps||0)));
+  const X=v=>pad+(maxX===minX?0:(v-minX)/(maxX-minX))*(W-pad-10);
+  const Y=v=>H-pad-(v/maxY)*(H-pad-14);
+  const line=(key,col)=>`<polyline fill="none" stroke="${col}" stroke-width="2.5"
+     points="${hist.map(p=>X(p.t_s).toFixed(1)+','+Y(p[key]||0).toFixed(1)).join(' ')}"/>`;
+  let ticks=""; for(let i=0;i<=4;i++){ const gy=pad+ (i/4)*(H-pad-14);
+    const val=(maxY*(1-i/4)); ticks+=`<line x1="${pad}" y1="${gy}" x2="${W-10}" y2="${gy}" stroke="#1e2733"/>
+      <text x="${pad-6}" y="${gy+3}" text-anchor="end" fill="#8b98a5" font-size="10">${val>=1000?(val/1000).toFixed(1)+'k':Math.round(val)}</text>`; }
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="monospace">
+    ${ticks}${line("prompt_tps","var(--cpu)")}${line("decode_tps","var(--npu)")}
+    <text x="${W-10}" y="14" text-anchor="end" fill="#58a6ff" font-size="11">■ prompt tok/s</text>
+    <text x="${W-10}" y="28" text-anchor="end" fill="#3fb950" font-size="11">■ decode tok/s</text>
+    <text x="${pad}" y="${H-6}" fill="#8b98a5" font-size="10">${minX.toFixed(1)}s</text>
+    <text x="${W-10}" y="${H-6}" text-anchor="end" fill="#8b98a5" font-size="10">${maxX.toFixed(1)}s</text>
+  </svg>`;
+}
+
+function renderTiers(tiers){
+  const el=$("tiers"); if(!tiers||!tiers.length){ el.innerHTML='<div class="sub">No tiers.</div>'; return; }
+  el.innerHTML = tiers.map(t=>{
+    const col=TIER_COLOR[t.name]||"var(--accent)";
+    const pooled=t.scope==="pooled";
+    const scopeTxt = pooled?"pooled (pod-wide)":t.scope.replace("_"," ");
+    let devs="";
+    if(!pooled && (t.devices||[]).length>1){
+      devs = `<div class="devs">`+t.devices.map(d=>`<div class="dev">
+        <span class="sub">${esc(d.label)}</span>
+        <div class="bar db"><div style="width:${Math.min(100,d.pct).toFixed(1)}%;background:${col};opacity:.8"></div></div>
+        <span class="amt" style="text-align:right">${fb(d.used_bytes)} / ${fb(d.cap_bytes)}</span>
+      </div>`).join("")+`</div>`;
+    }
+    return `<div class="tier">
+      <div class="hd"><span class="nm" style="color:${col}">${esc(t.name)}</span>
+        <span class="scope ${pooled?'pooled':''}">${esc(scopeTxt)}</span></div>
+      <div class="bar"><div style="width:${Math.min(100,t.total_pct).toFixed(1)}%;background:${col}"></div></div>
+      <div class="amt" style="margin-top:3px">${fb(t.total_used_bytes)} / ${fb(t.total_cap_bytes)}
+        &nbsp;(${(t.total_pct||0).toFixed(2)}%)${pooled?"":` · total across ${(t.devices||[]).length} device(s)`}</div>
+      ${devs}</div>`;
+  }).join("");
+}
+
+function renderTable(el, cols, rows, idleIf){
+  if(!rows||!rows.length){ el.innerHTML='<div class="sub">No data yet.</div>'; return; }
+  const head="<tr>"+cols.map(c=>`<th>${c.h}</th>`).join("")+"</tr>";
+  const body=rows.map(r=>`<tr class="${idleIf&&idleIf(r)?'idle':''}">`+cols.map(c=>`<td>${r[c.k]}</td>`).join("")+"</tr>").join("");
+  el.innerHTML=`<table>${head}${body}</table>`;
+}
+
+async function poll(){
+  let d;
+  try{ d = await (await fetch("/api/metrics",{cache:"no-store"})).json(); }
+  catch(e){ $("status").className="pill st-error"; $("status").textContent="server?"; schedule(); return; }
+  const status=d.status||"waiting";
+  const sp=$("status"); sp.textContent=status; sp.className="pill st-"+(["running","done","starting","error"].includes(status)?status:"waiting");
+  if(!d.config){ schedule(); return; }
+
+  const c=d.config, sim=d.sim||{}, ct=d.counters||{}, thr=d.throughput||{}, lat=d.latency||{};
+  $("banner").innerHTML=[
+    ["model(s)", (c.models||[]).join(", ")],
+    ["topology", `${c.num_nodes} node · ${c.num_instances} inst · ${c.total_npu} GPU · TP ${JSON.stringify(c.tp_sizes)}`],
+    ["tier-policy", `<code>${esc(c.tier_policy)}</code>`],
+    ["cpu-scope", `<code>${esc(c.cpu_scope)}</code>`],
+    ["prefix-storage", `<code>${esc(c.prefix_storage)}</code>`],
+    ["dtype / block", `${esc(c.dtype)} / ${esc(c.block_size)}`],
+    ["sim clock", `${(sim.sim_seconds||0).toFixed(3)} s`],
+    ["wall", `${(d.wall_seconds||0).toFixed(1)} s`],
+  ].map(([k,v])=>`<div><div class="k">${k}</div><b>${v}</b></div>`).join("");
+
+  const done=ct.requests_finished||0, tot=ct.requests_total||0;
+  const pct = tot? Math.min(100,100*done/tot) : (status==="done"?100:0);
+  $("progbar").style.width=pct+"%";
+  $("progtext").textContent=`Requests finished ${fi(done)} / ${fi(tot)}`;
+
+  $("tiles").innerHTML=[
+    tile("Requests done", fi(done), `${fi(ct.requests_running)} running · ${fi(ct.requests_waiting)} waiting`),
+    tile("Prompt tokens", fi(ct.prompt_tokens)),
+    tile("Decode tokens", fi(ct.decode_tokens)),
+    tile("Total tokens", fi(ct.total_tokens)),
+    tile("Batches", fi(ct.batches)),
+    tile("Req / s", (thr.req_per_s||0).toFixed(2)),
+    tile("Decode tok/s", (thr.decode_tok_per_s||0).toFixed(1), `live ${(thr.live_decode_tok_per_s||0).toFixed(0)}`),
+    tile("Total tok/s", (thr.total_tok_per_s||0).toFixed(1)),
+  ].join("");
+
+  drawChart(thr.history||[]);
+  renderTiers(d.tiers||[]);
+
+  const pc=d.prefix_cache||{};
+  $("prefix").innerHTML=`<div class="sub" style="margin-bottom:8px">Overall hit ratio
+    <b style="color:var(--txt);font-size:16px">${(pc.total_hit_ratio||0).toFixed(2)}%</b>
+    of ${fi(pc.requested_tokens)} requested tokens</div><div id="pctab"></div>`;
+  renderTable($("pctab"),
+    [{h:"tier",k:"name"},{h:"hit tokens",k:"hit"},{h:"hit %",k:"pct"},{h:"reload ms",k:"rl"}],
+    (pc.tiers||[]).map(x=>({name:x.name,hit:fi(x.hit_tokens),pct:(x.hit_pct||0).toFixed(2),rl:(x.reload_ms||0).toFixed(2)})),
+    r=>r.hit==="0");
+
+  const order=[["TTFT","ttft"],["TBT/token","tbt"],["ITL","itl"],["E2E","e2e"]];
+  renderTable($("latency"),
+    [{h:"metric",k:"m"},{h:"mean",k:"mean"},{h:"p50",k:"p50"},{h:"p90",k:"p90"},{h:"p99",k:"p99"},{h:"max",k:"max"}],
+    order.map(([nm,key])=>{const o=lat[key]||{};return {m:nm,mean:(o.mean||0).toFixed(2),p50:(o.p50||0).toFixed(2),
+      p90:(o.p90||0).toFixed(2),p99:(o.p99||0).toFixed(2),max:(o.max||0).toFixed(2)};}));
+
+  renderTable($("hbm"),
+    [{h:"instance",k:"i"},{h:"GPUs",k:"g"},{h:"used",k:"u"},{h:"cap",k:"c"},{h:"% used",k:"p"},{h:"weight",k:"w"}],
+    (d.npu_hbm||[]).map(h=>({i:h.instance,g:h.num_npus,u:fb(h.used_bytes),c:fb(h.cap_bytes),
+      p:(h.pct||0).toFixed(2),w:fb(h.weight_bytes)})));
+
+  $("freshness").innerHTML = status==="done"?"run finished":`<span class="dot"></span>updated ${(d.wall_seconds||0).toFixed(1)}s in`;
+  $("foot").innerHTML=`source <code>/api/metrics</code> · status <b>${esc(status)}</b> · latency over ${fi((lat).finished)} finished`;
+  schedule();
+}
+let timer=null;
+function schedule(){ clearTimeout(timer); timer=setTimeout(poll, 1500); }
+poll();
+</script>
+</body>
+</html>
