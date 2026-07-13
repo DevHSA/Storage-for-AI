@@ -296,11 +296,15 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
     the 2-GPU example this splits a 39-token reuse into 20 (same-GPU→CPU) + 19 (cross-GPU→JBOF); with
     <code>per_node</code> all 39 come from CPU.
   </div>
-  <p>To model <b>heterogeneous or explicit per-GPU host memory</b>, add a <code>cpu_mem</code> block inside
-  an instance (exactly like <code>npu_mem</code>). It overrides the split default and sizes that GPU's CPU
-  pool directly; under <code>per_node</code> the shared pool becomes the <em>sum</em> of the instances'
-  <code>cpu_mem</code>. The node-level <code>cpu_mem</code> is still required (it drives power, PIM and the
-  ASTRA-Sim host-memory model) and acts as the default when an instance omits its own:</p>
+  <p>To model <b>heterogeneous or explicit per-GPU host memory</b>, declare a <code>cpu_mem</code> block inside
+  each instance (exactly like <code>npu_mem</code>) — this is the <b>preferred</b> form: it sizes that
+  superchip's CPU directly, and the <b>node-level <code>cpu_mem</code> can then be omitted entirely</b>. When
+  omitted, the node aggregate is <b>derived</b> from the instances (size = sum of the superchips'
+  <code>cpu_mem</code>; bw/latency from the first) — removing the redundant duplicate that used to sit at
+  both levels. A node-level <code>cpu_mem</code> is still honored if present (and remains required only on the
+  PIM / attention-offloading path, which reads its <code>pim_config</code>). Under <code>per_node</code> the
+  shared pool is the <em>sum</em> of the instances' <code>cpu_mem</code>; under <code>per_instance</code> each
+  superchip owns exactly what it declares:</p>
   <pre class="code">"instances": [
   { "model_name": "…", "npu_mem": { "mem_size": 96, "mem_bw": 1597, "mem_latency": 0 },
     <span class="cm">"cpu_mem": { "mem_size": 300 },</span>   <span class="cm"># this GPU's private host DRAM (GiB); bw/latency default to the node's</span>
@@ -318,7 +322,10 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
     superchip-instances = 16 GPUs</b>, run with <code>--cpu-scope per_instance</code> so each superchip
     owns its 1.5&nbsp;TB CPU and cross-superchip KV reuse flows through the pod-wide
     <span class="pill tag-jbof">JBOF</span>/<span class="pill tag-cold">COLDSTORE</span> — which these files
-    declare <b>once at the top level</b> (the pod total) rather than per node. Real bandwidth/latency
+    declare <b>once at the top level</b> (the pod total) rather than per node. The CPU is likewise declared
+    <b>once per superchip</b> (each instance's own <code>cpu_mem</code>, no node-level aggregate — it's
+    derived). The live dashboard (<code>--dashboard</code>) rolls these up <b>by tray</b> (4 GPUs + 2 CPUs =
+    2 superchips) as well as by node and by GPU. Real bandwidth/latency
     live in <em>both</em>; only capacity differs — <code>actual</code> uses the real per-GPU 288&nbsp;GiB HBM /
     1.5&nbsp;TiB CPU-per-superchip / 256&nbsp;TiB pod-wide JBOF sizes, <code>small</code> shrinks them so
     <code>example_trace.jsonl</code> runs in seconds.

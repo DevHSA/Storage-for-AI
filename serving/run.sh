@@ -1,5 +1,18 @@
 # #!/bin/bash
 
+# --- [2026-07-14] CONFIG: node-level cpu_mem now OPTIONAL (derived) + TRAY dashboard ---
+#   The CPU can be declared ONCE per instance (superchip) -- the node-level cpu_mem may be
+#   OMITTED and is DERIVED (size = sum of the instances' cpu_mem; bw/latency from the first).
+#   Removes the old duplicate (node aggregate + per-instance). A node-level cpu_mem is still
+#   honored if present, and is still REQUIRED on the PIM/attention-offloading path. Byte-
+#   identical for configs whose instances already declared cpu_mem (all vera_rubin_tray_*).
+#   CAVEAT: if a config had a node cpu_mem but its instances OMITTED theirs, the old code gave
+#   each instance the FULL node total (over-provisioning); declaring per-instance cpu_mem (the
+#   new required form when the node omits it) gives the faithful per-superchip split instead.
+#   vera_rubin_tray_{small,actual}.json migrated to the new form (no node cpu_mem).
+#   DASHBOARD: the drill-down now toggles By-tray / By-GPU. A tray = up to 4 GPUs (2 superchips)
+#   grouped within a node (reporting-only; sim unchanged) -> shows 4 GPUs + 2 CPUs per tray.
+
 # --- [2026-07-14] LIVE DASHBOARD demo (--dashboard) -----------------------------------
 #   Two terminals from the repo root:
 #     Terminal A (host):  python3 serving/dashboard/serve.py     # http://localhost:8000

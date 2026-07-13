@@ -71,6 +71,11 @@ Point at a non-default snapshot via the sidebar or `LLMSS_DASHBOARD_FILE`.
 - **Prefix cache** — overall hit ratio + per-tier hit tokens / hit % / reload ms,
   with a per-tier **reload-latency** bar chart (slow-tier cost at a glance).
 - **Latency** — TTFT / TBT / ITL / E2E: mean / p50 / p90 / p99 / max.
-- **Per-instance drill-down** — per GPU/instance: running / waiting requests,
-  NPU HBM %, KV bytes, prefix-cache hit ratio.
+- **Compute drill-down (by tray / by GPU)** — a toggle switches between:
+  - **By tray** — a *tray* = up to 4 GPUs (2 TP=2 superchips) grouped within a
+    node (dashboard-only rollup; the sim still runs the TP=N instances). Per tray:
+    #GPUs, #CPUs (distinct host-memory pools it owns), HBM used/%, CPU KV/%,
+    running / waiting requests, hit ratio.
+  - **By GPU/instance** — per GPU/instance: running / waiting, NPU HBM %, KV
+    bytes, prefix-cache hit ratio.
 - **NPU HBM** — per-instance weight + KV occupancy.

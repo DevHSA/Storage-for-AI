@@ -44,6 +44,32 @@ def _percentiles(values_ns):
             "max": float(np.max(a)), "n": len(vals)}
 
 
+TRAY_GPUS = 4   # a Vera Rubin tray = 4 GPUs (2 TP=2 superchips); dashboard-only grouping
+
+
+def _assign_trays(schedulers):
+    """Group consecutive instances WITHIN a node into trays of up to TRAY_GPUS
+    GPUs (a Vera Rubin tray = 4 GPUs = 2 superchips). Purely a reporting rollup —
+    the simulator still runs the underlying TP=N instances unchanged."""
+    by_node = {}
+    for s in schedulers:
+        by_node.setdefault(getattr(s, "node_id", 0), []).append(s)
+    trays, tray_idx = [], 0
+    for node in sorted(by_node):
+        ss = sorted(by_node[node], key=lambda s: getattr(s, "instance_id", 0))
+        cur, acc = None, 0
+        for s in ss:
+            g = getattr(s, "num_npus", 1)
+            if cur is None or acc + g > TRAY_GPUS:
+                cur = {"tray": tray_idx, "node": node, "scheds": []}
+                trays.append(cur)
+                tray_idx += 1
+                acc = 0
+            cur["scheds"].append(s)
+            acc += g
+    return trays
+
+
 def _scope_for(name, cpu_scope):
     """Explicit, unambiguous scope label per tier (independent of topology)."""
     if name == "NPU":
@@ -163,6 +189,36 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
             "pct": _pct(used, cap), "weight_bytes": getattr(m, "weight", 0),
         })
 
+    # ---- tray rollup (dashboard-only grouping: <=4 GPUs / tray) --------- #
+    trays_info = []
+    for t in _assign_trays(schedulers):
+        ss = t["scheds"]
+        hbm_used = sum(max(getattr(s.memory, "npu_used", 0), getattr(s.memory, "weight", 0)) for s in ss)
+        hbm_cap = sum(getattr(s.memory, "npu_mem", 0) for s in ss)
+        cpu_seen = {}
+        for s in ss:
+            c = getattr(s.memory, "second_tier_prefix_cache", None)
+            if c is not None:
+                cpu_seen[id(c)] = c
+        cpu_used = sum(_safe_call(c.total_memory_usage, 0) for c in cpu_seen.values())
+        cpu_cap = sum((getattr(c, "capacity", 0) or 0) for c in cpu_seen.values())
+        hrs = []
+        for s in ss:
+            req_i, hits_i = _safe_call(s.memory.tier_hit_report, (0, {}))
+            hrs.append((sum((hits_i or {}).values()) / req_i * 100.0) if req_i else 0.0)
+        trays_info.append({
+            "tray": t["tray"], "node": t["node"],
+            "num_gpus": sum(getattr(s, "num_npus", 1) for s in ss),
+            "num_cpus": len(cpu_seen), "num_instances": len(ss),
+            "instances": [getattr(s, "instance_id", -1) for s in ss],
+            "hbm_used_bytes": hbm_used, "hbm_cap_bytes": hbm_cap, "hbm_pct": _pct(hbm_used, hbm_cap),
+            "npu_kv_bytes": sum(_safe_call(lambda s=s: s.memory.npu_prefix_cache.total_memory_usage(), 0) for s in ss),
+            "cpu_used_bytes": cpu_used, "cpu_cap_bytes": cpu_cap, "cpu_pct": _pct(cpu_used, cpu_cap),
+            "running": sum(_safe_call(lambda s=s: sum(len(b.requests) for b in s.inflight), 0) for s in ss),
+            "waiting": sum(_safe_call(lambda s=s: len([r for r in s.request if r.arrival <= clock_ns]), 0) for s in ss),
+            "hit_ratio": (sum(hrs) / len(hrs)) if hrs else 0.0,
+        })
+
     # ---- prefix-cache hits + reload per tier ---------------------------- #
     total_requested, hit_tokens, reload_ns = 0, {}, {}
     for s in schedulers:
@@ -216,7 +272,7 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
         "schema": 2, "status": status, "wall_seconds": round(wall_seconds, 3),
         "sim": {"clock_ns": clock_ns, "sim_seconds": sim_seconds},
         "config": config, "counters": counters, "throughput": thr,
-        "tiers": tiers, "instances": instances_info, "npu_hbm": npu_hbm,
+        "tiers": tiers, "trays": trays_info, "instances": instances_info, "npu_hbm": npu_hbm,
         "prefix_cache": prefix_cache, "latency": latency,
     }
 

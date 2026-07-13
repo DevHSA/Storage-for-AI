@@ -30,6 +30,11 @@
   .btn,select{background:var(--panel);color:var(--txt);border:1px solid var(--line);
     border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit}
   .btn:hover{border-color:var(--accent2)}
+  .seg{display:inline-flex;margin-left:8px;border:1px solid var(--line);border-radius:7px;overflow:hidden;vertical-align:middle}
+  .segbtn{background:var(--panel);color:var(--muted);border:0;border-left:1px solid var(--line);
+    padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;text-transform:none;letter-spacing:0}
+  .segbtn:first-child{border-left:0}
+  .segbtn.active{background:var(--accent2);color:#fff;font-weight:700}
   .pill{display:inline-block;padding:2px 12px;border-radius:20px;font-size:12px;font-weight:700}
   .st-running{background:rgba(63,185,80,.18);color:#56d364;border:1px solid #2ea043}
   .st-done{background:rgba(88,166,255,.18);color:#79c0ff;border:1px solid #388bfd}
@@ -117,7 +122,12 @@
 
   <div class="grid2">
     <div><h2>⏱️ Latency (ms)</h2><div class="card"><div id="latency"></div></div></div>
-    <div><h2>🖥️ Per-instance drill-down</h2><div class="card"><div id="insttab"></div></div></div>
+    <div><h2>🖥️ Compute drill-down
+        <span class="seg">
+          <button id="segTray" class="segbtn">By tray</button><button id="segInst" class="segbtn">By GPU</button>
+        </span></h2>
+      <div class="card"><div id="drilltab"></div>
+        <div class="sub" style="margin-top:6px">A <b>tray</b> = up to 4 GPUs (2 superchips); CPUs = distinct host-memory pools it owns.</div></div></div>
   </div>
 
   <h2>🖥️ NPU HBM (weight + KV, per instance)</h2>
@@ -308,11 +318,7 @@ async function poll(){
     order.map(([nm,key])=>{const o=lat[key]||{};return {m:nm,mean:(o.mean||0).toFixed(2),p50:(o.p50||0).toFixed(2),
       p90:(o.p90||0).toFixed(2),p99:(o.p99||0).toFixed(2),max:(o.max||0).toFixed(2)};}));
 
-  renderTable($("insttab"),
-    [{h:"inst",k:"i"},{h:"node",k:"n"},{h:"GPUs",k:"g"},{h:"running",k:"r"},{h:"waiting",k:"w"},
-     {h:"NPU %",k:"p"},{h:"KV",k:"kv"},{h:"hit %",k:"hr"}],
-    (d.instances||[]).map(x=>({i:x.instance,n:x.node,g:x.num_npus,r:fi(x.running),w:fi(x.waiting),
-      p:(x.hbm_pct||0).toFixed(1),kv:fb(x.npu_kv_bytes),hr:(x.hit_ratio||0).toFixed(1)})));
+  LAST=d; renderDrill();
 
   renderTable($("hbm"),
     [{h:"instance",k:"i"},{h:"node",k:"n"},{h:"GPUs",k:"g"},{h:"used",k:"u"},{h:"cap",k:"c"},{h:"% used",k:"p"},{h:"weight",k:"w"}],
@@ -323,6 +329,31 @@ async function poll(){
   $("foot").innerHTML=`source <code>/api/metrics</code> · status <b>${esc(status)}</b> · latency over ${fi(lat.finished)} finished · ${hist.length} timeline points`;
   schedule();
 }
+
+// ---- compute drill-down: by tray vs by GPU/instance --------------------- //
+let LAST=null;
+let DRILL=localStorage.getItem("llmss-drill")||"tray";
+function renderDrill(){
+  $("segTray").classList.toggle("active", DRILL==="tray");
+  $("segInst").classList.toggle("active", DRILL==="inst");
+  if(!LAST){ $("drilltab").innerHTML='<div class="sub">No data yet.</div>'; return; }
+  if(DRILL==="tray"){
+    renderTable($("drilltab"),
+      [{h:"tray",k:"t"},{h:"node",k:"n"},{h:"GPUs",k:"g"},{h:"CPUs",k:"c"},{h:"HBM used",k:"hu"},{h:"HBM %",k:"hp"},
+       {h:"CPU KV",k:"cu"},{h:"CPU %",k:"cp"},{h:"running",k:"r"},{h:"waiting",k:"w"},{h:"hit %",k:"hr"}],
+      (LAST.trays||[]).map(x=>({t:x.tray,n:x.node,g:x.num_gpus,c:x.num_cpus,hu:fb(x.hbm_used_bytes),
+        hp:(x.hbm_pct||0).toFixed(1),cu:fb(x.cpu_used_bytes),cp:(x.cpu_pct||0).toFixed(1),
+        r:fi(x.running),w:fi(x.waiting),hr:(x.hit_ratio||0).toFixed(1)})));
+  } else {
+    renderTable($("drilltab"),
+      [{h:"inst",k:"i"},{h:"node",k:"n"},{h:"GPUs",k:"g"},{h:"running",k:"r"},{h:"waiting",k:"w"},
+       {h:"NPU %",k:"p"},{h:"KV",k:"kv"},{h:"hit %",k:"hr"}],
+      (LAST.instances||[]).map(x=>({i:x.instance,n:x.node,g:x.num_npus,r:fi(x.running),w:fi(x.waiting),
+        p:(x.hbm_pct||0).toFixed(1),kv:fb(x.npu_kv_bytes),hr:(x.hit_ratio||0).toFixed(1)})));
+  }
+}
+$("segTray").onclick=()=>{ DRILL="tray"; localStorage.setItem("llmss-drill",DRILL); renderDrill(); };
+$("segInst").onclick=()=>{ DRILL="inst"; localStorage.setItem("llmss-drill",DRILL); renderDrill(); };
 
 // ---- theme + refresh-rate controls --------------------------------------- //
 const themeBtn=$("themeBtn");

@@ -333,7 +333,9 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
             toplevel_pod_tiers[_tn] = _tl
 
     # Check if all required arguments are present in each node
-    required_keys = ["num_instances", "cpu_mem", "instances"]
+    # NOTE: 'cpu_mem' is OPTIONAL at the node level — when omitted it is derived
+    # from the per-instance cpu_mem blocks (see the derivation below).
+    required_keys = ["num_instances", "instances"]
     # Check if power modeling is specified in each node
     power_modeling = True
     for node_config in nodes:
@@ -465,7 +467,32 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
         total_num_instances += num_instances
         total_instances.extend(instances)
 
-        cpu_mem = node_config["cpu_mem"]
+        # Node-level cpu_mem is OPTIONAL. When omitted, derive the node aggregate
+        # from the per-instance cpu_mem blocks (size = sum of the superchips'
+        # host memory; bw/latency from the first superchip that declares them).
+        # This removes the redundant node-level CPU aggregate: the CPU is declared
+        # once, inside each instance (superchip), and the node total is computed.
+        # PIM / attention-offloading still needs an explicit node-level cpu_mem
+        # (it carries pim_config), so it stays required on that path.
+        if "cpu_mem" in node_config:
+            cpu_mem = node_config["cpu_mem"]
+        elif enable_attn_offloading:
+            raise KeyError(
+                "node-level 'cpu_mem' is required when attention offloading (PIM) is enabled")
+        else:
+            _icpus = [inst.get("cpu_mem") for inst in instances]
+            if any(c is None for c in _icpus):
+                raise KeyError(
+                    "when a node omits 'cpu_mem', every instance must declare its own "
+                    "'cpu_mem' (the node aggregate is derived from them)")
+            _bw = next((c["mem_bw"] for c in _icpus if "mem_bw" in c), None)
+            _lat = next((c["mem_latency"] for c in _icpus if "mem_latency" in c), None)
+            if _bw is None or _lat is None:
+                raise KeyError(
+                    "when a node omits 'cpu_mem', at least one instance 'cpu_mem' must "
+                    "declare 'mem_bw' and 'mem_latency'")
+            cpu_mem = {"mem_size": sum(c["mem_size"] for c in _icpus),
+                       "mem_bw": _bw, "mem_latency": _lat}
 
         # overwrite cpu_mem config with pim_config
         if enable_attn_offloading:
