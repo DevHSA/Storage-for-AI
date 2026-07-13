@@ -1,26 +1,39 @@
 # #!/bin/bash
 
-# --- [2026-07-08] CPU-SCOPE demo: per-GPU CPU pools (--cpu-scope per_instance) -------
-#   New --cpu-scope flag controls the CPU (host-DRAM) prefix-cache tier topology:
-#     per_node (default)  : ONE CPU pool per rack, shared by all its GPUs.
-#     per_instance        : each GPU gets its OWN private CPU pool (real per-GPU host
-#                           memory, e.g. Vera Rubin 1 CPU : 2 GPU over NVLink-C2C). A
-#                           cross-GPU prefix reuse can no longer be served from CPU and
-#                           instead routes to the pod-wide JBOF/COLDSTORE pool.
-#   On example_trace.jsonl (2 GPUs) a 39-token reuse splits by scope:
-#     per_node     + COLDSTORE : CPU 39, JBOF 0     (all reuse from the shared CPU)     TTFT 14.40
-#     per_instance + COLDSTORE : CPU 20, JBOF 19    (same-GPU->CPU + cross-GPU->JBOF)   TTFT 14.48
-#     per_instance + CPU-only  : CPU 20 (16.7%)     (cross-GPU reuse lost, no shared)   TTFT 14.68
-#   Omitting --cpu-scope (per_node) is byte-identical to the previous behavior.
-
-# per_instance + full tier chain: cross-GPU reuse pooled through JBOF (faithful Vera Rubin)
+# --- [2026-07-08] VERA RUBIN TRAY (faithful topology): 2 nodes x 2 trays x 2 superchips
+#   A superchip = 1 Vera CPU (1.5 TB LPDDR5X) + 2 Rubin GPUs (288 GB HBM4) = ONE TP=2
+#   instance. A tray = 2 superchips (4 GPUs, 2 CPUs). A node/rack = 2 trays. So this is
+#   2 nodes x 4 superchips = 16 GPUs, 8 TP=2 instances. Run with --cpu-scope per_instance
+#   so each superchip gets its OWN 1.5 TB CPU; cross-superchip KV reuse then flows through
+#   the pod-wide JBOF/CMX (not host DRAM) -- exactly how a real Vera Rubin pod shares KV.
+#   Two configs, real bw/latency in BOTH, only CAPACITY differs:
+#     vera_rubin_tray_actual : NPU 288 GiB/GPU, CPU 1536 GiB/superchip (6144/node),
+#                              JBOF 131072 GiB/node (16 TiB x 8 GPUs), COLDSTORE ~1 PiB
+#     vera_rubin_tray_small  : NPU 24, CPU 32, JBOF 256, COLDSTORE 2048 GiB (runs example fast)
+#   TP=2 (not 4): the profiler only has measured tp=1/tp=2 compute data for
+#   RTXPRO6000/Llama-3.1-8B, and TP=2 maps 1:1 to the superchip anyway. Both verified on
+#   example_trace (per_instance): 8 instances x 2 NPUs, cross-superchip reuse -> JBOF 39
+#   hits (32.5%), TTFT 6.34 ms; timing identical for small vs actual (only capacity differs).
 python -m serving \
-  --cluster-config 'configs/cluster/single_node_multi_instance_tier.json' \
+  --cluster-config 'configs/cluster/vera_rubin_tray_small.json' \
   --dtype float16 --block-size 16 \
   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
   --cpu-scope per_instance \
   --dataset 'workloads/example_trace.jsonl' \
-  --output 'outputs/prefix_cpu_pool_run_tier.csv'
+  --output 'outputs/vera_rubin_tray_small.csv'
+# swap the config to vera_rubin_tray_actual.json for the real-capacity version.
+
+# --- [2026-07-08] CPU-SCOPE demo: per-GPU CPU pools (--cpu-scope per_instance) (prev) --
+#   per_node (default): one shared CPU pool per rack. per_instance: each GPU its own pool;
+#   cross-GPU reuse routes to JBOF/COLDSTORE. On example_trace (2 GPUs): per_node -> CPU 39
+#   (TTFT 14.40); per_instance -> CPU 20 + JBOF 19 (14.48). Omitting --cpu-scope == per_node.
+# python -m serving \
+#   --cluster-config 'configs/cluster/single_node_multi_instance_tier.json' \
+#   --dtype float16 --block-size 16 \
+#   --enable-prefix-caching --enable-prefix-sharing --prefix-storage COLDSTORE \
+#   --cpu-scope per_instance \
+#   --dataset 'workloads/example_trace.jsonl' \
+#   --output 'outputs/prefix_cpu_pool_run_tier.csv'
 
 # --- [2026-07-08] TIER-FIDELITY CHECK: NPU->CPU baseline vs full tier chain (prev) ----
 #   Same small dataset (example_trace.jsonl), only --prefix-storage differs (CPU vs

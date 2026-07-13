@@ -1236,7 +1236,7 @@ def main():
         usage = _tier_usage_bytes()
         if tier_requested_tokens > 0:
             total_hit = 0
-            print_markup(f"{'Tier':<10}{'Hit tokens':>11}{'Hit %':>9}{'Reload(ms)':>12}{'Usage(MB)':>12}{'Cap(GB)':>10}{'% used':>9}")
+            print_markup(f"{'Tier':<10}{'Hit tokens':>11}{'Hit %':>9}{'Reload(ms)':>12}{'Usage(MB)':>14}{'Cap(GB)':>14}{'% used':>9}")
             for dev in ordered:
                 h = tier_hit_tokens.get(dev, 0)
                 total_hit += h
@@ -1246,7 +1246,7 @@ def main():
                 rl_ms = tier_reload_ns.get(dev, 0) / 1e6
                 print_markup(
                     f"{dev.name:<10}{h:>11}{ratio:>8.2f}%{rl_ms:>12.2f}"
-                    f"{used/MB_TO_BYTE:>12.2f}{cap/GB_TO_BYTE:>10.2f}{pct:>8.3f}%")
+                    f"{used/MB_TO_BYTE:>14.2f}{cap/GB_TO_BYTE:>14.2f}{pct:>8.3f}%")
             print_markup(f"Total prefix hit ratio (%):                                         {(total_hit/tier_requested_tokens)*100:.2f}")
             # Reload-latency metric: cost of serving hits from below NPU. NPU hits
             # are free; deeper tiers cost more, so a config that keeps hits in a

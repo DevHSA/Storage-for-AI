@@ -301,6 +301,26 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
     <span class="cm">"cpu_mem": { "mem_size": 200 },</span>   <span class="cm"># -> per_instance: pools 300+200; per_node: one shared 500 GiB pool</span>
     "tp_size": 1 }
 ]</pre>
+  <div class="box insight">
+    <div class="t">Ready-made faithful Vera Rubin tray configs</div>
+    Two configs ship this structure end-to-end:
+    <code>configs/cluster/vera_rubin_tray_{small,actual}.json</code>. A Vera Rubin <b>superchip</b> = 1 Vera
+    CPU (1.5&nbsp;TB LPDDR5X) + 2 Rubin GPUs (288&nbsp;GB HBM4) = one <b>TP=2</b> instance; a <b>tray</b> =
+    2 superchips (4 GPUs, 2 CPUs); a <b>node/rack</b> = 2 trays. Both files are <b>2 nodes × 4
+    superchip-instances = 16 GPUs</b>, run with <code>--cpu-scope per_instance</code> so each superchip
+    owns its 1.5&nbsp;TB CPU and cross-superchip KV reuse flows through the pod-wide
+    <span class="pill tag-jbof">JBOF</span>/<span class="pill tag-cold">COLDSTORE</span>. Real bandwidth/latency
+    live in <em>both</em>; only capacity differs — <code>actual</code> uses the real 288&nbsp;GiB / 1.5&nbsp;TiB /
+    128&nbsp;TiB sizes, <code>small</code> shrinks them so <code>example_trace.jsonl</code> runs in seconds.
+    (We use <b>TP=2</b> rather than TP=4-per-tray because the profiler ships measured compute data only for
+    tp=1/tp=2 — and TP=2 happens to match the superchip exactly. TP=4 would need <code>tp=4</code> profiler
+    data generated on a 4-GPU box.)
+    <pre class="code">python -m serving --cluster-config configs/cluster/vera_rubin_tray_small.json \
+  --dtype float16 --block-size 16 --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage COLDSTORE --cpu-scope per_instance \
+  --dataset workloads/example_trace.jsonl --output outputs/vera_rubin_tray_small.csv
+<span class="cm"># 8 instances × 2 NPUs; cross-superchip reuse -> JBOF 39 hits (32.5%); TTFT ~6.34 ms.</span></pre>
+  </div>
   <p>Run the two side by side (same tiny trace, only the scope differs) and compare the per-tier hit table:</p>
   <pre class="code"><span class="cm"># per_node (default): one shared CPU pool per rack — cross-GPU reuse served from CPU</span>
 python -m serving \
