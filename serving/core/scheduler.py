@@ -867,8 +867,13 @@ class Scheduler:
         return self.batch_ids
 
     # add a request
-    def add_request(self, req, is_init=True):
+    def add_request(self, req, is_init=True, session_id=None, sub_request_index=None):
         new_req = Request(*(req), is_init=is_init)
+        # Multi-turn / agentic session tagging (informational: does NOT affect
+        # scheduling or timing — only lets metrics split cold first-turn vs
+        # resumed-turn latency). Defaults None => flat requests are unchanged.
+        new_req.session_id = session_id
+        new_req.sub_request_index = sub_request_index
         # Maintain arrival-time sort order (required by schedule_base/schedule_with_prefix)
         bisect.insort(self.request, new_req, key=lambda r: (r.arrival, r.id))
         return

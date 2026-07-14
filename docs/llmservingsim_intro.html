@@ -236,7 +236,8 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
     <tr><td class="num">--cpu-scope</td><td><code>per_node</code> (default) = one CPU pool per rack, shared by its GPUs. <code>per_instance</code> = each GPU gets its own private CPU pool (real per-GPU host memory, e.g. Vera Rubin's 1 CPU : 2 GPU); cross-GPU reuse then routes to the pod-wide JBOF/COLDSTORE instead of CPU. See §4.</td></tr>
     <tr><td class="num">--tier-policy</td><td><code>inclusive</code> (default) = a cached prefix is written through to CPU <em>and</em> every deeper tier at once. <code>exclusive</code> = victim cache / write-back-on-eviction: a prefix lives in ONE tier and is demoted one tier deeper <em>only</em> when the tier above evicts it — including the NPU→CPU boundary, so CPU (and below) stay empty until the NPU fills, then it cascades NPU→CPU→JBOF→COLDSTORE. Closer to real tiered-KV systems. See §6.</td></tr>
     <tr><td class="num">--dashboard</td><td>Emit a live-metrics JSON (<code>outputs/dashboard/live.json</code>) every log interval for the browser dashboard. Serve it with <code>python3 serving/dashboard/serve.py</code> and open <code>http://localhost:8000</code>. Shows, live: throughput / KV-spill-memory / TTFT / TBT over sim time; per-tier memory with explicit scope (NPU <b>per-GPU</b>, CPU by <code>--cpu-scope</code>, JBOF/COLDSTORE <b>pooled</b>) and the per-device split; per-tier reload latency; a per-instance drill-down (running / waiting / NPU% / hit-ratio); prefix-cache hits; latency percentiles; and a tier bw/latency spec panel (plus light/dark + refresh controls). See <code>serving/dashboard/README.md</code>.</td></tr>
-    <tr><td class="num">--max-num-seqs</td><td>Max concurrent sequences batched per GPU (8). Caps in-flight KV so the NPU isn't over-committed.</td></tr>
+    <tr><td class="num">--max-num-seqs</td><td>Max concurrent running sequences per instance (default <b>128</b>). Caps in-flight KV so the NPU isn't over-committed — lower it (e.g. 8) for small-NPU configs, or the live (locked) KV of too many concurrent requests can exceed the NPU KV cache and abort.</td></tr>
+    <tr><td class="num">--session-metrics</td><td>For multi-turn / agentic-session workloads (records with <code>sub_requests</code>): split the TTFT summary into <b>first-turn (cold)</b> vs <b>resumed-turn (warm)</b>. A resumed turn reloads the conversation's parked context from a lower tier before answering, so this isolates the pause/resume "context-parking" cost — e.g. JBOF vs COLDSTORE reload on resume. Off by default; no effect on flat workloads. See §6.</td></tr>
     <tr><td class="num">--output</td><td>Per-request CSV (arrival, TTFT, TPOT, ITL, latency…) — the raw data behind the summary table.</td></tr>
   </table>
   <p>Two more you'll see: <code>--enable-chunked-prefill</code> (on by default — splits a long prompt
@@ -889,6 +890,26 @@ jbof_load       1          LOCAL      0           JBOF:0      27493990     LOCAL
   not yet charged to the timeline — only the read/reload is. So both policies model reload (read) latency
   faithfully; the write-amplification cost of <code>inclusive</code> is real hardware but not yet in the
   sim.</span></p>
+  <div class="box insight">
+    <div class="t">Decode use-case: multi-turn "context parking" (session pause/resume)</div>
+    A conversation's KV state is <b>parked</b> to a lower tier while the user is idle between turns, then
+    <b>reloaded</b> to answer the next turn. This rides on the agentic-session loader (a JSONL record with
+    <code>sub_requests</code>): each turn releases <code>tool_duration_ns</code> after the previous finishes
+    (the idle gap), and a turn's input is the <b>accumulated conversation</b> (a growing shared prefix), so the
+    next turn <em>reloads</em> the parked context (a prefill over it → tier-timed) instead of recomputing.
+    During the gap, other active sessions evict this session's context NPU→CPU→JBOF, so on resume it reloads
+    from <span class="pill tag-jbof">JBOF</span> (fast) — or from <span class="pill tag-cold">COLDSTORE</span>
+    (slow) without JBOF. <code>--session-metrics</code> splits TTFT into <b>first-turn (cold)</b> vs
+    <b>resumed-turn (warm)</b> to isolate that reload. Generate the workload with
+    <code>workloads/generators/make_multiturn.py</code>; ready-made A/B in
+    <code>run_multiturn_parking_demo.sh</code> (<code>multiturn_qwen3_32b.json</code> vs its <code>_nojbof</code>
+    twin). <b>Verified</b> (8B twin, controlled): resumed-turn TTFT <b>16 ms with JBOF vs 35 ms with
+    COLDSTORE</b> (2.2×), reload <b>17 ms vs 221 ms</b> (13×), first-turn TTFT identical — the whole delta is
+    the parked-KV reload tier. On the Qwen3-32B tray the reload is <b>61 ms (JBOF) vs 777 ms (COLDSTORE)</b>.
+    Size JBOF ≥ the parked working set (else contexts overflow JBOF→COLDSTORE and the reuse is served slow),
+    and size NPU KV ≥ one grown context with <code>--max-num-seqs 1</code> (else the live context over-commits
+    the NPU).
+  </div>
   <div class="box note">
     <div class="t">Fidelity invariant — all spill tiers index at token granularity</div>
     Every below-NPU cache (CPU, FLASH, JBOF, COLDSTORE) is a radix tree keyed at <b>one-token</b>

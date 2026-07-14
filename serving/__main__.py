@@ -264,6 +264,11 @@ def main():
     parser.add_argument('--dashboard-file', type=str, default='outputs/dashboard/live.json',
                         help='where the live-metrics JSON is written when --dashboard is set '
                         '(relative paths resolve from the repo root). Default outputs/dashboard/live.json.')
+    parser.add_argument('--session-metrics', action='store_true', default=False,
+                        help='for multi-turn / agentic-session workloads (records with "sub_requests"): '
+                        'split the TTFT summary into first-turn (cold) vs resumed-turn (warm, context '
+                        'reloaded from a lower tier). Exposes the pause/resume "context parking" benefit — '
+                        'e.g. JBOF vs COLDSTORE reload on turn resume. Off by default; no effect otherwise.')
     parser.add_argument('--enable-local-offloading', action='store_true', default=False,
                         help='enable weight offloading to local (NPU) memory. '
                         'Recommended to disable unless weight memory access is not counted in profiling')
@@ -700,6 +705,10 @@ def main():
     total_gen = 0
     total_latency = 0
     req_cnt = 0
+
+    # `args` is reused as a list inside the loop (subprocess cmd), so capture the
+    # session-metrics flag up front (same reason as dash_enabled below).
+    session_metrics_enabled = bool(args.session_metrics)
 
     # -------------------- Live dashboard (--dashboard) --------------------
     dash_enabled = bool(args.dashboard)          # NOTE: `args` is reused as a list
@@ -1379,6 +1388,32 @@ def main():
     _lat_row("TBT (per-token)", all_tpot)
     _lat_row("E2E latency", all_e2e)
     print_rule()
+
+    # ---- Session / resume latency (multi-turn "context parking", --session-metrics) ----
+    # A conversation turn N>=1 must reload its accumulated context (parked in a lower
+    # tier while the session was idle) before it can answer -> that reload lands in the
+    # turn's TTFT. Splitting TTFT by first-turn (cold, no reload) vs resumed-turn (warm,
+    # reloaded) isolates the tier-reload cost, so a fast tier (JBOF) vs a slow one
+    # (COLDSTORE) shows up directly in resumed-turn TTFT. No effect unless the workload
+    # carries sessions (records with "sub_requests").
+    if session_metrics_enabled:
+        done_reqs = [r for i in range(num_instances) for r in schedulers[i].done]
+        first_ttft   = [r.ttft for r in done_reqs if r.sub_request_index == 0 and r.ttft is not None and r.ttft >= 0]
+        resumed_ttft = [r.ttft for r in done_reqs if (r.sub_request_index or 0) >= 1 and r.ttft is not None and r.ttft >= 0]
+        n_sessions = len({r.session_id for r in done_reqs if r.session_id is not None})
+        print_rule("[sim.tagline]Session / resume latency (multi-turn)[/]")
+        if n_sessions == 0:
+            print_markup("No multi-turn sessions in this run (workload has no 'sub_requests').")
+        else:
+            print_markup(f"Sessions: {n_sessions}    first-turn (cold): {len(first_ttft)}    "
+                         f"resumed-turn (warm / context reloaded): {len(resumed_ttft)}")
+            print_markup(f"{'Metric':<20}{'mean':>10}{'p50':>10}{'p90':>10}{'p99':>10}{'max':>10}    (ms)")
+            _lat_row("TTFT first-turn", first_ttft)
+            _lat_row("TTFT resumed-turn", resumed_ttft)
+            if first_ttft and resumed_ttft:
+                _delta = (np.mean(resumed_ttft) - np.mean(first_ttft)) / 1e6
+                print_markup(f"Resume overhead (resumed - first, mean ms):                         {_delta:.2f}")
+        print_rule()
 
     # Final dashboard snapshot (status="done") so the live view reflects the end state.
     if dash_enabled:

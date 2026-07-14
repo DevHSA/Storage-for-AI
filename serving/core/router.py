@@ -201,19 +201,21 @@ class Router:
             instance_id = self._select_instance(self.prefill_schedulers, "prefill")
             sched = self.prefill_schedulers[instance_id]
 
+            _sid = req_data.get('session_id')
+            _sidx = req_data.get('sub_request_index')
             if sched.enable_prefix_caching:
                 sched.add_request([
                     req_data['index'], sched.model,
                     req_data['input_toks'], req_data['output_toks'],
                     req_data['arrival_time_ns'], sched.instance_id,
                     req_data.get('input_hash_ids', []), req_data.get('output_hash_ids', []),
-                ], is_init=self._is_init)
+                ], is_init=self._is_init, session_id=_sid, sub_request_index=_sidx)
             else:
                 sched.add_request([
                     req_data['index'], sched.model,
                     req_data['input_toks'], req_data['output_toks'],
                     req_data['arrival_time_ns'], sched.instance_id,
-                ], is_init=self._is_init)
+                ], is_init=self._is_init, session_id=_sid, sub_request_index=_sidx)
 
             self._pending_idx += 1
             routed += 1
