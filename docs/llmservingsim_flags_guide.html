@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLMServingSim — Flags, Config &amp; Runnable Examples</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1f2328; --muted:#57606a; --line:#d0d7de;
+    --accent:#0969da; --accent2:#1a7f37;
+    --code-bg:#f6f8fa; --code-border:#d0d7de;
+    --npu:#1a7f37; --cpu:#0969da; --flash:#8250df; --jbof:#bc4c00; --cold:#6e7781;
+    --note:#0969da; --insight:#1a7f37; --gotcha:#9a6700;
+    --maxw:940px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:16px;line-height:1.65;}
+  .layout{display:grid;grid-template-columns:290px minmax(0,1fr);gap:0;max-width:1300px;margin:0 auto;}
+  nav.toc{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;
+    border-right:1px solid var(--line);padding:24px 18px;font-size:14px;background:#fbfcfd;}
+  nav.toc h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px;}
+  nav.toc a{display:block;color:var(--fg);text-decoration:none;padding:4px 8px;border-radius:6px;margin:1px 0;}
+  nav.toc a:hover{background:#eaeef2;color:var(--accent)}
+  nav.toc a.sub{margin-left:12px;color:var(--muted);font-size:13px}
+  main{padding:34px 40px 120px;max-width:var(--maxw);}
+  h1{font-size:31px;line-height:1.2;margin:0 0 6px}
+  .subtitle{color:var(--muted);font-size:17px;margin:0 0 26px}
+  h2{font-size:23px;margin:46px 0 12px;padding-top:10px;border-top:1px solid var(--line)}
+  h3{font-size:18px;margin:26px 0 8px}
+  h4{font-size:15px;margin:18px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  p{margin:12px 0}
+  code{font-family:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+    font-size:.88em;background:var(--code-bg);border:1px solid var(--code-border);
+    border-radius:5px;padding:1px 5px;}
+  pre.code{font-family:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+    font-size:12.5px;line-height:1.5;background:var(--code-bg);border:1px solid var(--code-border);
+    border-left:4px solid var(--accent);border-radius:8px;padding:14px 16px;overflow-x:auto;margin:14px 0;
+    white-space:pre;}
+  pre.code .cm{color:#6a9955;font-style:italic}
+  pre.code .k{color:#0969da}
+  pre.code .j{color:#bc4c00;font-weight:600}
+  .box{border:1px solid var(--line);border-left-width:5px;border-radius:8px;padding:12px 16px;margin:16px 0;background:#fbfcfd}
+  .box .t{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+  .note{border-left-color:var(--note)} .note .t{color:var(--note)}
+  .insight{border-left-color:var(--insight)} .insight .t{color:var(--insight)}
+  .gotcha{border-left-color:var(--gotcha)} .gotcha .t{color:var(--gotcha)}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#f6f8fa;font-weight:600}
+  tbody tr:nth-child(even){background:#fbfcfd}
+  .num{font-family:monospace}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:12px;font-weight:700;color:#fff}
+  .tag-npu{background:var(--npu)} .tag-cpu{background:var(--cpu)} .tag-flash{background:var(--flash)}
+  .tag-jbof{background:var(--jbof)} .tag-cold{background:var(--cold)}
+  .ab{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+  @media (max-width:820px){.ab{grid-template-columns:1fr}}
+  .ab h4{margin:0 0 4px}
+  .win{background:#eafaef;border:1px solid #1a7f37;border-radius:8px;padding:6px 10px;font-size:13.5px;margin:6px 0}
+  hr{border:0;border-top:1px solid var(--line);margin:30px 0}
+  .lead{font-size:17px}
+  @media (max-width:900px){
+    .layout{grid-template-columns:1fr}
+    nav.toc{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
+    main{padding:24px 18px 80px}
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <a href="#tldr">0. How to use this guide</a>
+  <a href="#ab">1. The WITH / WITHOUT-JBOF trick</a>
+  <a href="#config">2. The config file, field by field</a>
+  <a href="#config" class="sub">2a. Topology</a>
+  <a href="#config" class="sub">2b. The tiers</a>
+  <a href="#config" class="sub">2c. Per-superchip NPU &amp; CPU</a>
+  <a href="#flags">3. Flags reference</a>
+  <a href="#ex">4. Runnable examples</a>
+  <a href="#ex-prefix" class="sub">4a. Prefix caching + tier</a>
+  <a href="#ex-policy" class="sub">4b. --tier-policy</a>
+  <a href="#ex-scope" class="sub">4c. --cpu-scope</a>
+  <a href="#ex-seqs" class="sub">4d. --max-num-seqs</a>
+  <a href="#ex-dash" class="sub">4e. --dashboard / --log-interval</a>
+  <a href="#ex-session" class="sub">4f. --session-metrics (decode)</a>
+  <a href="#showcase">5. Realistic sharegpt showcase</a>
+  <a href="#sizing">6. Sizing rules (avoid crashes)</a>
+</nav>
+
+<main>
+  <h1>LLMServingSim — Flags, Config &amp; Runnable Examples</h1>
+  <p class="subtitle">A practical companion to the
+  <a href="llmservingsim_intro.html">intro guide</a>: every flag we added, the current config-file
+  structure field-by-field, and copy-paste examples — each in two variants, <b>with JBOF</b> and
+  <b>without JBOF</b>, on Qwen3-32B and a fast 8B twin. All numbers below are from real runs.</p>
+
+  <div class="box note">
+    <div class="t">Running the commands</div>
+    Everything runs inside the container from the repo root. Either open a shell
+    (<code>docker exec -it servingsim_docker bash -lc "cd /app/LLMServingSim &amp;&amp; bash"</code>) and paste the
+    <code>python -m serving …</code> lines, or wrap one command as
+    <code>docker exec servingsim_docker bash -lc "cd /app/LLMServingSim &amp;&amp; python -m serving …"</code>.
+    For the live dashboard, in a second terminal <b>on the host</b>:
+    <code>python3 serving/dashboard/serve.py</code> → open <code>http://localhost:8000</code>.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="tldr">0. How to use this guide</h2>
+  <p>Each example gives the exact command for the <b>WITH-JBOF</b> config and the <b>WITHOUT-JBOF</b> config
+  side by side; the two differ only by whether the config declares a <code>jbof_mem</code> tier. Read the
+  scenario, copy the commands, run them, and compare the printed <b>Tier</b> table (hit&nbsp;%, reload&nbsp;ms)
+  and the <b>Latency Summary</b>. The config files referenced below already ship in
+  <code>configs/cluster/</code>; the workload files are generated by a one-line script shown with each example.</p>
+  <p>Every example ships a <b>Qwen3-32B</b> command (matches the config you gave — 8&nbsp;GPUs / 4&nbsp;CPUs,
+  minutes per run) and a <b>fast 8B twin</b> (<code>meta-llama/Llama-3.1-8B</code>, seconds per run) so you can
+  try it instantly and then scale up. The 8B twins are where the headline numbers below were measured.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="ab">1. The WITH / WITHOUT-JBOF trick</h2>
+  <p>The whole point of a two-variant example is to isolate what the pooled
+  <span class="pill tag-jbof">JBOF</span> tier buys you. The A/B is trivial: <b>the same config, with the
+  <code>jbof_mem</code> block present vs removed.</b> When JBOF is absent, a prefix/context that would have
+  parked in JBOF falls through to <span class="pill tag-cold">COLDSTORE</span> instead — so any later reuse
+  reloads from network storage (~2&nbsp;ms/access) rather than pooled NVMe (~80&nbsp;µs/access).</p>
+  <div class="ab">
+    <div><h4>WITH JBOF</h4>
+    <pre class="code">"num_nodes": 2,
+<span class="j">"jbof_mem":  { "mem_size": 1.5, "mem_bw": 64, "mem_latency": 80000,
+             "link_bw": 100, "link_latency": 2000 },</span>
+"coldstore_mem": { "mem_size": 4, "mem_bw": 4, "mem_latency": 2000000,
+             "link_bw": 16, "link_latency": 20000 },
+"nodes": [ … ]</pre></div>
+    <div><h4>WITHOUT JBOF (the <code>_nojbof</code> twin)</h4>
+    <pre class="code">"num_nodes": 2,
+<span class="cm"># jbof_mem simply omitted</span>
+"coldstore_mem": { "mem_size": 4, "mem_bw": 4, "mem_latency": 2000000,
+             "link_bw": 16, "link_latency": 20000 },
+"nodes": [ … ]</pre></div>
+  </div>
+  <p>Every <code>*_nojbof.json</code> in <code>configs/cluster/</code> is exactly its twin minus the
+  <code>jbof_mem</code> line. To make your own: <code>python3 -c "import&nbsp;json;d=json.load(open('X.json'));d.pop('jbof_mem',None);json.dump(d,open('X_nojbof.json','w'),indent=2)"</code>.</p>
+  <div class="box gotcha">
+    <div class="t">Two knobs decide whether JBOF changes anything</div>
+    (1) Something must actually <b>spill</b> — the NPU KV must fill so prefixes get evicted downward
+    (a large NPU + a tiny workload spills nothing, so JBOF and no-JBOF look identical). (2) JBOF must be
+    <b>large enough to hold the reused working set</b> — if it overflows, the reused data lands in COLDSTORE
+    anyway and the A/B collapses. See <a href="#sizing">§6</a>.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="config">2. The config file, field by field</h2>
+  <p>Here is the config you gave, annotated. It describes <b>2 nodes × 1 tray = 8 GPUs and 4 CPUs</b>:
+  each node holds one Vera-Rubin <em>tray</em> = 2 <em>superchips</em>, and a superchip (1 CPU + 2 GPUs) is
+  one <code>tp_size:2</code> instance.</p>
+  <pre class="code">{
+  <span class="k">"num_nodes"</span>: 2,                 <span class="cm"># racks / nodes in the pod</span>
+  <span class="k">"link_bw"</span>: 1800, <span class="k">"link_latency"</span>: 1000,   <span class="cm"># the COMPUTE fabric (NVLink) for TP all-reduce; GB/s, ns. -> network.yml</span>
+
+  <span class="cm"># ---- POD-WIDE pooled deep tiers: declared ONCE at the top level = the pod total ----</span>
+  <span class="j">"jbof_mem"</span>:      { "mem_size": 30, "mem_bw": 64, "mem_latency": 80000,  "link_bw": 100, "link_latency": 2000 },
+  <span class="k">"coldstore_mem"</span>: { "mem_size": 40, "mem_bw": 4,  "mem_latency": 2000000,"link_bw": 16,  "link_latency": 20000 },
+       <span class="cm"># mem_size  = capacity in GiB (pod total, shared by ALL nodes)</span>
+       <span class="cm"># mem_bw    = tier read bandwidth, GB/s        mem_latency = access latency, ns</span>
+       <span class="cm"># link_bw   = BlueField/network hop bandwidth  link_latency = hop latency, ns  (deep tiers only)</span>
+
+  <span class="k">"nodes"</span>: [
+    { <span class="k">"num_instances"</span>: 2,          <span class="cm"># 2 superchips in this node's tray</span>
+      <span class="k">"instances"</span>: [
+        { "model_name": "Qwen/Qwen3-32B", "hardware": "RTXPRO6000",
+          <span class="k">"npu_mem"</span>: { "mem_size": 33, "mem_bw": 22000, "mem_latency": 10 },  <span class="cm"># per-GPU HBM (GiB / GB/s / ns)</span>
+          <span class="k">"cpu_mem"</span>: { "mem_size": 3,  "mem_bw": 1200,  "mem_latency": 120 }, <span class="cm"># THIS superchip's host memory</span>
+          "pd_type": null, <span class="k">"tp_size"</span>: 2 },                              <span class="cm"># tp_size 2 => the superchip's 2 GPUs</span>
+        { … second superchip, identical … }
+      ] },
+    { <span class="k">"num_instances"</span>: 2, "instances": [ … node 2's tray … ] }
+  ]
+}</pre>
+
+  <h3>2a. Topology</h3>
+  <p><code>num_nodes</code> × (per-node <code>num_instances</code>) instances, each an independent serving
+  engine of <code>tp_size</code> GPUs. Here: 2 × 2 = 4 instances × TP2 = <b>8 GPUs</b>; 4 superchips = <b>4
+  CPUs</b>. The dashboard groups each node's instances into a <b>tray</b> (≤4 GPUs). <b>Why TP=2, not TP=4?</b>
+  the profiler ships measured compute data only for tp1/tp2, and TP=2 happens to equal one superchip.</p>
+
+  <h3>2b. The tiers</h3>
+  <p>The KV hierarchy is <span class="pill tag-npu">NPU</span> (GPU HBM) →
+  <span class="pill tag-cpu">CPU</span> (host) → <span class="pill tag-jbof">JBOF</span> (pooled NVMe behind
+  BlueField) → <span class="pill tag-cold">COLDSTORE</span> (network storage). <b>NPU is per-GPU</b>,
+  <b>CPU is per-superchip</b> (or per-node — see <code>--cpu-scope</code>), and <b>JBOF/COLDSTORE are one
+  pod-wide shared pool</b> — a prefix cached by any GPU is reusable by every GPU. Each tier block is
+  <code>mem_size</code> (GiB), <code>mem_bw</code> (GB/s), <code>mem_latency</code> (ns); the deep tiers add
+  <code>link_bw</code>/<code>link_latency</code> for the fabric hop. The reload cost of a hit served from a tier
+  is <code>mem_latency + bytes/mem_bw (+ link_latency + bytes/link_bw)</code> — this is the number that makes
+  JBOF (fast) beat COLDSTORE (slow).</p>
+
+  <h3>2c. Per-superchip NPU &amp; CPU (and the de-dup)</h3>
+  <p>Each instance declares its own <code>npu_mem</code> (per-GPU HBM) and <code>cpu_mem</code> (that
+  superchip's host memory). <b>NPU KV capacity = <code>npu_mem − weight</code></b>: Qwen3-32B weighs
+  ~30.5&nbsp;GiB/GPU (TP2), so <code>npu_mem: 33</code> leaves only ~2.5&nbsp;GiB for KV.</p>
+  <div class="box note">
+    <div class="t">Config change: node-level <code>cpu_mem</code> is now optional</div>
+    CPU used to be declared twice (once per node, once per instance). Now the <b>per-superchip</b>
+    <code>cpu_mem</code> is enough — omit the node-level block and the node aggregate is <b>derived</b> (size =
+    sum of the superchips'; bw/latency from the first). A node-level <code>cpu_mem</code> is still honored if
+    present, and is still required only on the PIM / attention-offloading path.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="flags">3. Flags reference</h2>
+  <table>
+    <tr><th>Flag</th><th>What it does</th></tr>
+    <tr><td class="num">--enable-prefix-caching</td><td>Turn on the radix prefix cache (reuse a computed prefix's KV instead of recomputing). Required for any tiering.</td></tr>
+    <tr><td class="num">--enable-prefix-sharing</td><td>Let the shared CPU pool and the pod-wide JBOF/COLDSTORE pool serve reuse <em>across</em> requests/GPUs. Required for cross-GPU reuse and deep-tier spill.</td></tr>
+    <tr><td class="num">--prefix-storage {CPU,FLASH,JBOF,COLDSTORE}</td><td>How deep the spill chain goes. <code>COLDSTORE</code> = NPU→CPU→(FLASH)→JBOF→COLDSTORE (deepest). Tiers present in the config, up to this cap, are active.</td></tr>
+    <tr><td class="num">--tier-policy {inclusive,exclusive}</td><td><b>inclusive</b> (default): a prefix is written through to CPU <em>and</em> every deeper tier at once. <b>exclusive</b>: victim cache — a prefix lives in ONE tier and is demoted one tier deeper only when the tier above evicts it (incl. NPU→CPU). §4b.</td></tr>
+    <tr><td class="num">--cpu-scope {per_node,per_instance}</td><td><b>per_node</b> (default): one CPU pool per node, shared by its GPUs. <b>per_instance</b>: each superchip its own CPU; cross-GPU reuse then routes to the pod-wide JBOF/COLDSTORE. §4c.</td></tr>
+    <tr><td class="num">--max-num-seqs N</td><td>Max concurrent running sequences per instance (default 128). Caps in-flight KV — lower it for small-NPU configs or the live KV over-commits the NPU and aborts. §4d.</td></tr>
+    <tr><td class="num">--dashboard</td><td>Emit <code>outputs/dashboard/live.json</code> each log interval for the browser dashboard (throughput / KV-spill / TTFT / TBT over time, per-tier memory, reload bars, by-tray drill-down). §4e.</td></tr>
+    <tr><td class="num">--dashboard-file PATH</td><td>Where the live JSON is written (default <code>outputs/dashboard/live.json</code>).</td></tr>
+    <tr><td class="num">--log-interval SEC</td><td>How often (sim seconds) to log a throughput sample / dashboard point (default 1.0). Lower = denser charts; must be &lt; total sim time or the charts show "collecting samples". §4e.</td></tr>
+    <tr><td class="num">--session-metrics</td><td>For multi-turn / agentic-session workloads (records with <code>sub_requests</code>): split TTFT into first-turn (cold) vs resumed-turn (warm, context reloaded). Exposes the pause/resume "context-parking" JBOF benefit. §4f.</td></tr>
+    <tr><td class="num">--dtype / --block-size / --dataset / --output</td><td>Precision (<code>float16</code>), KV block size (16), the workload JSONL, and the per-request CSV.</td></tr>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="ex">4. Runnable examples</h2>
+  <p>Each example: generate the workload (once), then run the two variants. Watch the <b>Tier</b> table
+  (which tier serves the hits, and its <b>Reload(ms)</b>) and the <b>Latency Summary</b>.</p>
+
+  <!-- 4a -->
+  <h3 id="ex-prefix">4a. Prefix caching + the storage tier (the core A/B)</h3>
+  <p>A "fill then reuse" workload computes many distinct contexts (they cascade NPU→CPU→JBOF→COLDSTORE),
+  then reuses them — so each reuse <b>reloads</b> from whichever tier still holds it. With JBOF the reload is
+  fast; without it, the data sits in COLDSTORE.</p>
+  <p><code>guide_qwen_tiering.json</code> is your base config with <code>npu_mem</code> shrunk from 33 to
+  <b>30.58</b> (~68&nbsp;MB KV) so a modest workload spills; <code>guide_8b_tiering.json</code> is the
+  Llama-3.1-8B twin. Both ship in <code>configs/cluster/</code> with their <code>_nojbof</code> variants.</p>
+  <h4>Generate the workload (once)</h4>
+  <pre class="code">python3 workloads/generators/make_rack_fill.py workloads/guide_fill.jsonl 16 256 8 4 3000
+<span class="cm"># 16 distinct 256-tok contexts (phase 1 fills+spills), then 16 reuses oldest-first (phase 2 reloads)</span></pre>
+  <div class="ab">
+    <div><h4>WITH JBOF</h4>
+    <pre class="code">python -m serving \
+  --cluster-config configs/cluster/<span class="j">guide_qwen_tiering.json</span> \
+  --dtype float16 --block-size 16 \
+  --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage COLDSTORE --tier-policy exclusive \
+  --cpu-scope per_instance --max-num-seqs 1 \
+  --dataset workloads/guide_fill.jsonl \
+  --output outputs/tier_jbof.csv</pre></div>
+    <div><h4>WITHOUT JBOF</h4>
+    <pre class="code">python -m serving \
+  --cluster-config configs/cluster/<span class="j">guide_qwen_tiering_nojbof.json</span> \
+  --dtype float16 --block-size 16 \
+  --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage COLDSTORE --tier-policy exclusive \
+  --cpu-scope per_instance --max-num-seqs 1 \
+  --dataset workloads/guide_fill.jsonl \
+  --output outputs/tier_nojbof.csv</pre></div>
+  </div>
+  <h4>⚡ Fast 8B twin (swap the config; runs in seconds)</h4>
+  <pre class="code"><span class="cm"># WITH:    --cluster-config configs/cluster/guide_8b_tiering.json</span>
+<span class="cm"># WITHOUT: --cluster-config configs/cluster/guide_8b_tiering_nojbof.json   (everything else identical)</span></pre>
+  <div class="win"><b>Result (measured — both the 8B twin and the Qwen3-32B tray):</b> same 49.2% hit ratio
+  either way, but the reuse reloads from <b>JBOF in ~15&nbsp;ms</b> vs <b>COLDSTORE in ~200&nbsp;ms</b> — a
+  <b>13× lower reload cost</b> purely from having the JBOF tier. (Reload cost depends on the reloaded bytes and
+  the tier's bandwidth, not the model, so 8B and Qwen land on the same numbers here.)</div>
+
+  <!-- 4b -->
+  <h3 id="ex-policy">4b. <code>--tier-policy</code> — inclusive vs exclusive</h3>
+  <p>Same fill workload as 4a. <b>inclusive</b> eagerly copies each prefix into CPU <em>and</em> every deeper
+  tier (so JBOF fills immediately, and reuse is served from the shallowest copy). <b>exclusive</b> is a victim
+  cache: a prefix lives in one tier and only moves down on eviction — deeper tiers stay empty until the ones
+  above fill. Just change one flag; run each with the WITH/WITHOUT-JBOF configs from 4a.</p>
+  <pre class="code"><span class="cm"># inclusive (default): drop "--tier-policy exclusive"</span>
+python -m serving --cluster-config configs/cluster/guide_8b_tiering.json \
+  --dtype float16 --block-size 16 --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage COLDSTORE --cpu-scope per_instance --max-num-seqs 1 \
+  --dataset workloads/guide_fill.jsonl --output outputs/incl.csv
+<span class="cm"># exclusive: add "--tier-policy exclusive"  (and the _nojbof config for the no-JBOF arm)</span></pre>
+  <div class="win"><b>What to look for:</b> under <b>inclusive</b> the Tier table shows JBOF/COLDSTORE filling
+  from the start (eager copies) and hits served high in the chain; under <b>exclusive</b> the deeper tiers
+  stay empty until the NPU/CPU fill, then content cascades down. In both, WITH-JBOF gives a far lower
+  <b>Reload(ms)</b> than WITHOUT.</div>
+
+  <!-- 4c -->
+  <h3 id="ex-scope">4c. <code>--cpu-scope</code> — per_node vs per_instance</h3>
+  <p><b>per_node</b>: the GPUs in a node share one CPU pool, so a prefix computed on one GPU is reused from CPU
+  by its neighbour. <b>per_instance</b>: each superchip has its <em>own</em> CPU, so cross-GPU reuse can no
+  longer come from CPU and instead routes to the <b>pod-wide JBOF/COLDSTORE</b> — which is exactly where the
+  JBOF tier earns its keep.</p>
+  <pre class="code"><span class="cm"># per_node (default): drop the flag, or "--cpu-scope per_node"</span>
+python -m serving --cluster-config configs/cluster/guide_8b_tiering.json \
+  --dtype float16 --block-size 16 --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage COLDSTORE --cpu-scope <span class="k">per_node</span> --max-num-seqs 1 \
+  --dataset workloads/guide_fill.jsonl --output outputs/pernode.csv
+<span class="cm"># per_instance: --cpu-scope per_instance   (+ the _nojbof config for the no-JBOF arm)</span></pre>
+  <div class="win"><b>Result (example_trace, 2-GPU, measured earlier):</b> <code>per_node</code> serves the whole
+  39-token reuse from <span class="pill tag-cpu">CPU</span>; <code>per_instance</code> splits it into 20
+  (same-GPU → CPU) + 19 (<b>cross-GPU → JBOF</b>). WITHOUT JBOF that cross-GPU 19 falls to COLDSTORE and its
+  reload jumps.</div>
+
+  <!-- 4d -->
+  <h3 id="ex-seqs">4d. <code>--max-num-seqs</code> — concurrency &amp; the crash it prevents</h3>
+  <p>Small-NPU configs (like the ones here, ~2.5&nbsp;GiB KV) can only hold a few requests' live KV at once.
+  The default (128) lets the scheduler admit too many; their <em>locked</em> in-flight KV over-commits the NPU
+  and the run aborts with <code>NPU: tried to load X but only Y is available</code>. The fix is to cap
+  concurrency so the live set fits — which <em>also</em> lets finished prefixes accumulate and spill.</p>
+  <pre class="code"><span class="cm"># crashes: --max-num-seqs 128 (default) on a small-NPU config + a heavy workload</span>
+<span class="cm"># works:   --max-num-seqs 1   (used throughout this guide for the tight-NPU examples)</span></pre>
+  <div class="box gotcha"><div class="t">Rule of thumb</div>
+  Keep <code>max_num_seqs × (largest request's KV) &lt; NPU KV capacity</code>. For these tight configs that
+  means <code>--max-num-seqs 1</code>; for roomy NPUs, 8 is a good default. JBOF/no-JBOF does not change this.</div>
+
+  <!-- 4e -->
+  <h3 id="ex-dash">4e. <code>--dashboard</code> / <code>--log-interval</code> — watch it live</h3>
+  <p>Add <code>--dashboard</code> to any run to stream metrics to the browser; <code>--log-interval</code> sets
+  the sampling cadence. Use the fill workload from 4a so the tiers actually move.</p>
+  <pre class="code"><span class="cm"># terminal A (host):</span> python3 serving/dashboard/serve.py        <span class="cm"># http://localhost:8000</span>
+<span class="cm"># terminal B: WITH JBOF</span>
+python -m serving --cluster-config configs/cluster/guide_8b_tiering.json \
+  --dtype float16 --block-size 16 --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage COLDSTORE --tier-policy exclusive --cpu-scope per_instance --max-num-seqs 1 \
+  <span class="j">--dashboard --log-interval 0.2</span> \
+  --dataset workloads/guide_fill.jsonl --output outputs/dash.csv
+<span class="cm"># WITHOUT JBOF: same, with guide_8b_tiering_nojbof.json</span></pre>
+  <div class="win"><b>What to look for:</b> the "KV spill memory over sim time" chart fills the deep tiers;
+  the "Reload latency per tier" bars show JBOF short and COLDSTORE long; the by-tray drill-down shows 4 GPUs +
+  2 CPUs per tray. Lower <code>--log-interval</code> → denser curves (must be &lt; total sim time).</div>
+
+  <!-- 4f -->
+  <h3 id="ex-session">4f. <code>--session-metrics</code> — the decode use-case (context parking)</h3>
+  <p>A conversation's KV is <b>parked</b> to a lower tier while the user is idle between turns, then
+  <b>reloaded</b> to answer the next turn. With JBOF that reload is fast; without it, the conversation state
+  falls to COLDSTORE. <code>--session-metrics</code> splits TTFT into <b>first-turn (cold)</b> vs
+  <b>resumed-turn (warm)</b> so the reload tier shows up directly.</p>
+  <h4>Generate the multi-turn workload (once)</h4>
+  <pre class="code">python3 workloads/generators/make_multiturn.py workloads/guide_sessions_qwen.jsonl 16 3 512 16 16 500 40
+<span class="cm"># 16 sessions x 3 turns; 512-tok context; +16 user &amp; 16 decode/turn; 500 ms idle gap between turns</span></pre>
+  <div class="ab">
+    <div><h4>WITH JBOF</h4>
+    <pre class="code">python -m serving \
+  --cluster-config configs/cluster/<span class="j">multiturn_qwen3_32b.json</span> \
+  --dtype float16 --block-size 16 \
+  --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage COLDSTORE --tier-policy exclusive \
+  --cpu-scope per_instance --max-num-seqs 1 \
+  <span class="j">--session-metrics</span> \
+  --dataset workloads/guide_sessions_qwen.jsonl \
+  --output outputs/sess_jbof.csv</pre></div>
+    <div><h4>WITHOUT JBOF</h4>
+    <pre class="code">python -m serving \
+  --cluster-config configs/cluster/<span class="j">multiturn_qwen3_32b_nojbof.json</span> \
+  --dtype float16 --block-size 16 \
+  --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage COLDSTORE --tier-policy exclusive \
+  --cpu-scope per_instance --max-num-seqs 1 \
+  <span class="j">--session-metrics</span> \
+  --dataset workloads/guide_sessions_qwen.jsonl \
+  --output outputs/sess_nojbof.csv</pre></div>
+  </div>
+  <h4>⚡ Fast 8B twin (smaller session workload; runs in ~1 min)</h4>
+  <pre class="code">python3 workloads/generators/make_multiturn.py workloads/guide_sessions_8b.jsonl 8 3 256 16 16 400 40
+<span class="cm"># WITH:    --cluster-config configs/cluster/multiturn_8b_demo.json       --max-num-seqs 2 --dataset workloads/guide_sessions_8b.jsonl</span>
+<span class="cm"># WITHOUT: --cluster-config configs/cluster/multiturn_8b_demo_nojbof.json --max-num-seqs 2 --dataset workloads/guide_sessions_8b.jsonl</span></pre>
+  <p>The extra summary block looks like:</p>
+  <pre class="code">Session / resume latency (multi-turn)
+Sessions: 16    first-turn (cold): 16    resumed-turn (warm / context reloaded): 32
+Metric                    mean       p50       p90       p99       max    (ms)
+TTFT first-turn         471.35    471.41    881.62    881.81    881.85
+TTFT resumed-turn       762.55    ...                                       </pre>
+  <div class="win"><b>Result — 8B twin (controlled, measured):</b> resumed-turn TTFT <b>16&nbsp;ms with JBOF
+  vs 35&nbsp;ms with COLDSTORE</b> (2.2×), reload <b>17&nbsp;ms vs 221&nbsp;ms</b> (13×); first-turn TTFT is
+  identical, so the whole gap is the parked-KV reload tier. <b>Qwen3-32B tray (measured):</b> reload
+  <b>61&nbsp;ms (JBOF) vs 778&nbsp;ms (COLDSTORE)</b> = 12.7×; resumed-turn TTFT 763 vs 910&nbsp;ms.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="showcase">5. Realistic sharegpt showcase</h2>
+  <p>For production-like traffic, use a real trace instead of a generated one. The only change from §4a is the
+  dataset (and bounding concurrency so the tight NPU isn't over-committed):</p>
+  <pre class="code">python -m serving --cluster-config configs/cluster/guide_qwen_tiering.json \
+  --dtype float16 --block-size 16 --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage COLDSTORE --tier-policy exclusive --cpu-scope per_instance \
+  <span class="j">--max-num-seqs 8</span> --dashboard --log-interval 1 \
+  --dataset workloads/sharegpt-qwen3-32b-300-sps10.jsonl --output outputs/sharegpt_jbof.csv
+<span class="cm"># WITHOUT JBOF: swap to guide_qwen_tiering_nojbof.json</span></pre>
+  <div class="box note"><div class="t">Expect minutes, not seconds</div>
+  300 requests on 8 Qwen3-32B GPUs is a real run. Watch the dashboard; compare the Tier table's total
+  reload and the Latency Summary between the two configs. If nothing spills, shrink <code>npu_mem</code>
+  toward the weight (~30.6) so the KV cache is small; if JBOF fills to ~100% with hits landing in COLDSTORE,
+  grow <code>jbof_mem</code> (see §6).</div>
+
+  <!-- ============================================================ -->
+  <h2 id="sizing">6. Sizing rules (so runs don't crash and JBOF actually matters)</h2>
+  <table>
+    <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+    <tr><td>Crash: <code>NPU: tried to load X but only Y available</code></td><td>Too many concurrent requests' locked KV for the NPU KV capacity (<code>npu_mem − weight</code>).</td><td>Lower <code>--max-num-seqs</code> (1 for tight NPUs), or raise <code>npu_mem</code> so KV ≥ one grown request.</td></tr>
+    <tr><td>CPU/JBOF/COLDSTORE all 0%, hits 0</td><td>NPU never fills — nothing spills (large NPU + small workload).</td><td>Shrink <code>npu_mem</code> toward the weight, or use a bigger/fill workload.</td></tr>
+    <tr><td>WITH-JBOF looks identical to WITHOUT</td><td>JBOF overflows → reused data lands in COLDSTORE either way.</td><td>Grow <code>jbof_mem</code> ≥ the reused working set (≈ #distinct contexts × context KV; a context costs <b>2×</b> the bytes in CPU/JBOF/COLDSTORE that it does in the NPU, since the pooled tiers count both TP ranks).</td></tr>
+    <tr><td>A tier never fills even under pressure</td><td>Under <code>exclusive</code>, an evicted prefix that can't fit the tier below is dropped (KV is recomputable).</td><td>Give each tier ≥ one prefix's worth of capacity.</td></tr>
+    <tr><td>Dashboard charts say "collecting samples"</td><td><code>--log-interval</code> ≥ total sim time → &lt;2 points.</td><td>Lower <code>--log-interval</code>, or run a longer workload.</td></tr>
+  </table>
+  <div class="box insight"><div class="t">The one-line mental model</div>
+  JBOF only changes a number when (a) the NPU spills, (b) the spilled data is later <b>reused</b>, and (c) JBOF
+  is big enough to be the tier that serves that reuse. Then JBOF's ~80&nbsp;µs/access beats COLDSTORE's
+  ~2&nbsp;ms/access, and you see it in <b>Reload(ms)</b>, <b>TTFT</b>, and <b>throughput</b>.</div>
+
+  <hr>
+  <p style="color:var(--muted);font-size:14px">Companion to <a href="llmservingsim_intro.html">the intro
+  guide</a>. Config files in <code>configs/cluster/guide_*.json</code> and <code>multiturn_*.json</code>;
+  generators in <code>workloads/generators/</code>. All numbers measured on RTXPRO6000 profiles,
+  <code>float16</code>, block size 16.</p>
+</main>
+</div>
+</body>
+</html>
