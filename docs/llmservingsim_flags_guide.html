@@ -338,6 +338,52 @@ python -m serving --cluster-config configs/cluster/guide_8b_tiering.json \
   <b>reloaded</b> to answer the next turn. With JBOF that reload is fast; without it, the conversation state
   falls to COLDSTORE. <code>--session-metrics</code> splits TTFT into <b>first-turn (cold)</b> vs
   <b>resumed-turn (warm)</b> so the reload tier shows up directly.</p>
+
+  <h4>The session workload format — what's new vs a flat trace</h4>
+  <p>Every workload so far has been <b>flat</b>: one JSONL line = one <em>independent</em> request, with all
+  arrival times fixed up front. A <b>session</b> workload is different: one JSONL line = one whole
+  <em>conversation</em>, and its turns form a dependency chain released over time.</p>
+  <div class="ab">
+    <div><h4>Flat request (all earlier workloads)</h4>
+    <pre class="code">{ "input_toks": 128,
+  "output_toks": 64,
+  "arrival_time_ns": 0,
+  "input_tok_ids":  [ … prompt token ids … ],
+  "output_tok_ids": [ … generated ids … ] }
+<span class="cm"># one line = one request, arrives at arrival_time_ns</span></pre></div>
+    <div><h4>Session record (multi-turn)</h4>
+    <pre class="code">{ <span class="j">"session_id"</span>: "s0",
+  "arrival_time_ns": 0,
+  <span class="j">"sub_requests"</span>: [
+    { "input_toks": 528, "output_toks": 16,
+      "input_tok_ids":  [ … ], "output_tok_ids": [ … ],
+      <span class="j">"tool_duration_ns"</span>: 500000000 },   <span class="cm"># turn 0, then idle 500 ms</span>
+    { "input_toks": 560, "output_toks": 16,
+      "input_tok_ids":  [ … ], "output_tok_ids": [ … ],
+      "tool_duration_ns": 500000000 },   <span class="cm"># turn 1</span>
+    { … turn 2 … } ] }
+<span class="cm"># one line = one SESSION; sub_requests = the turns</span></pre></div>
+  </div>
+  <p>So a session record carries <b>three things a flat record does not</b>:</p>
+  <table>
+    <tr><th>Extra field</th><th>Meaning</th></tr>
+    <tr><td class="num">session_id</td><td>Groups the turns into one conversation. It rides through to each request so <code>--session-metrics</code> and the dashboard can split <b>first-turn (cold)</b> from <b>resumed-turn (warm)</b>. (Informational — it does not change scheduling.)</td></tr>
+    <tr><td class="num">sub_requests[]</td><td>The list of <b>turns</b>. Each turn has the <em>same</em> fields as a flat request (<code>input_toks</code>, <code>output_toks</code>, <code>input_tok_ids</code>, <code>output_tok_ids</code>) <b>plus</b> <code>tool_duration_ns</code>.</td></tr>
+    <tr><td class="num">tool_duration_ns</td><td>The <b>idle gap</b> after this turn before the next turn is released — the "user is thinking" / tool-call window during which the conversation is <b>parked</b> (its KV can be evicted downward). This is the knob that creates the pause/resume behavior.</td></tr>
+  </table>
+  <div class="box insight">
+    <div class="t">Two behaviors a flat trace can't express</div>
+    <b>(1) Dynamic release.</b> Only <b>turn 0</b> is queued at <code>arrival_time_ns</code>; each later turn is
+    released by the router at <em>(previous turn's completion&nbsp;+&nbsp;<code>tool_duration_ns</code>)</em> — the
+    turns are a dependency chain, not fixed arrivals. <b>(2) A growing shared prefix.</b> By convention (and as
+    <code>make_multiturn.py</code> builds it), <b>turn <i>t</i>'s <code>input_tok_ids</code> = turn <i>t−1</i>'s
+    (<code>input_tok_ids</code>&nbsp;+&nbsp;<code>output_tok_ids</code>) + a few new user tokens</b>. So the
+    accumulated conversation is one long shared prefix that a later turn <b>reloads</b> from cache/tier instead
+    of recomputing — and if it was evicted to JBOF/COLDSTORE while idle, that reload is the JBOF-vs-COLDSTORE
+    cost this example measures. (The loader also accepts these session records via the same
+    <code>--dataset</code> flag; it auto-detects <code>sub_requests</code>.)
+  </div>
+
   <h4>Generate the multi-turn workload (once)</h4>
   <pre class="code">python3 workloads/generators/make_multiturn.py workloads/guide_sessions_qwen.jsonl 16 3 512 16 16 500 40
 <span class="cm"># 16 sessions x 3 turns; 512-tok context; +16 user &amp; 16 decode/turn; 500 ms idle gap between turns</span></pre>
@@ -377,6 +423,12 @@ TTFT resumed-turn       762.55    ...                                       </pr
   vs 35&nbsp;ms with COLDSTORE</b> (2.2×), reload <b>17&nbsp;ms vs 221&nbsp;ms</b> (13×); first-turn TTFT is
   identical, so the whole gap is the parked-KV reload tier. <b>Qwen3-32B tray (measured):</b> reload
   <b>61&nbsp;ms (JBOF) vs 778&nbsp;ms (COLDSTORE)</b> = 12.7×; resumed-turn TTFT 763 vs 910&nbsp;ms.</div>
+  <div class="box note"><div class="t">On the live dashboard too</div>
+  Add <code>--dashboard</code> to either command and the same split appears as a live card —
+  <b>💬 Session / resume latency</b> — with first-turn (cold) vs resumed-turn (warm) TTFT (mean/p50/p90/p99/max)
+  and the resume overhead. The card shows only when the workload carries sessions, so it stays hidden for flat
+  traces. (Works with the base <code>qwen3_32b_2node_1tray_cascade_largewl.json</code> config too — just append
+  <code>--dashboard</code>.)</div>
 
   <!-- ============================================================ -->
   <h2 id="showcase">5. Realistic sharegpt showcase</h2>

@@ -252,6 +252,26 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
         "e2e": _percentiles([r.latency for s in schedulers for r in s.done]),
     }
 
+    # ---- session / resume latency (multi-turn "context parking") -------- #
+    # Emitted only when the workload carries agentic sessions (records with
+    # sub_requests, so requests are tagged with a sub_request_index). Splits
+    # TTFT into first-turn (cold) vs resumed-turn (warm — the conversation's
+    # parked context is reloaded from a lower tier before answering), so the
+    # pause/resume benefit (JBOF-fast vs COLDSTORE-slow reload) is visible.
+    sessions = None
+    _sess_done = [r for s in schedulers for r in s.done if getattr(r, "session_id", None) is not None]
+    if _sess_done:
+        _first = [r.ttft for r in _sess_done
+                  if getattr(r, "sub_request_index", None) == 0 and r.ttft is not None and r.ttft >= 0]
+        _resumed = [r.ttft for r in _sess_done
+                    if (getattr(r, "sub_request_index", None) or 0) >= 1 and r.ttft is not None and r.ttft >= 0]
+        _fp, _rp = _percentiles(_first), _percentiles(_resumed)
+        sessions = {
+            "n_sessions": len({r.session_id for r in _sess_done}),
+            "first_turn": _fp, "resumed_turn": _rp,
+            "resume_overhead_ms": (_rp["mean"] - _fp["mean"]) if (_first and _resumed) else 0.0,
+        }
+
     # ---- timeline history (append this interval's point) ---------------- #
     if record_point and history is not None:
         history.append({
@@ -274,7 +294,7 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
         "sim": {"clock_ns": clock_ns, "sim_seconds": sim_seconds},
         "config": config, "counters": counters, "throughput": thr,
         "tiers": tiers, "trays": trays_info, "instances": instances_info, "npu_hbm": npu_hbm,
-        "prefix_cache": prefix_cache, "latency": latency,
+        "prefix_cache": prefix_cache, "latency": latency, "sessions": sessions,
     }
 
 

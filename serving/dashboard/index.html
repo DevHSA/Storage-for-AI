@@ -130,6 +130,17 @@
         <div class="sub" style="margin-top:6px">A <b>tray</b> = up to 4 GPUs (2 superchips); CPUs = distinct host-memory pools it owns.</div></div></div>
   </div>
 
+  <div id="sessionWrap" style="display:none">
+    <h2>💬 Session / resume latency (multi-turn "context parking")</h2>
+    <div class="card">
+      <div id="sessionHdr" class="sub" style="margin-bottom:8px"></div>
+      <div id="sessiontab"></div>
+      <div class="sub" style="margin-top:6px">A resumed turn reloads the conversation's <b>parked</b> context
+        from a lower tier before answering — that reload lands in its TTFT. With <b>JBOF</b> the reload is fast;
+        without it the context falls to <b>COLDSTORE</b> and resumed-turn TTFT climbs. Cold first-turn has no reload.</div>
+    </div>
+  </div>
+
   <h2>🖥️ NPU HBM (weight + KV, per instance)</h2>
   <div class="card"><div id="hbm"></div></div>
 
@@ -323,6 +334,24 @@ async function poll(){
       p90:(o.p90||0).toFixed(2),p99:(o.p99||0).toFixed(2),max:(o.max||0).toFixed(2)};}));
 
   LAST=d; renderDrill();
+
+  // ---- session / resume latency (multi-turn) — shown only if the run has sessions ---- //
+  const se=d.sessions;
+  if(se){
+    $("sessionWrap").style.display="";
+    $("sessionHdr").innerHTML=`Sessions <b style="color:var(--txt)">${fi(se.n_sessions)}</b> ·
+      first-turn (cold) <b style="color:var(--txt)">${fi((se.first_turn||{}).n)}</b> ·
+      resumed-turn (warm / context reloaded) <b style="color:var(--txt)">${fi((se.resumed_turn||{}).n)}</b>
+      &nbsp;·&nbsp; resume overhead
+      <b style="color:${(se.resume_overhead_ms||0)>0?'var(--warn)':'var(--accent)'}">${(se.resume_overhead_ms||0)>=0?'+':''}${(se.resume_overhead_ms||0).toFixed(2)} ms</b> (resumed − first)`;
+    const srow=(nm,o)=>{o=o||{};return {m:nm,mean:(o.mean||0).toFixed(2),p50:(o.p50||0).toFixed(2),
+      p90:(o.p90||0).toFixed(2),p99:(o.p99||0).toFixed(2),max:(o.max||0).toFixed(2)};};
+    renderTable($("sessiontab"),
+      [{h:"TTFT (ms)",k:"m"},{h:"mean",k:"mean"},{h:"p50",k:"p50"},{h:"p90",k:"p90"},{h:"p99",k:"p99"},{h:"max",k:"max"}],
+      [srow("first-turn (cold)",se.first_turn), srow("resumed-turn (warm)",se.resumed_turn)]);
+  } else {
+    $("sessionWrap").style.display="none";
+  }
 
   renderTable($("hbm"),
     [{h:"instance",k:"i"},{h:"node",k:"n"},{h:"GPUs",k:"g"},{h:"used/GPU",k:"u"},{h:"HBM/GPU",k:"c"},{h:"% used",k:"p"},{h:"weight/GPU",k:"w"}],
