@@ -692,7 +692,10 @@ def main():
     last_log = 0    # last logged time
     FREQ = 1000_000_000 # 1 GHz (1e9 Hz)
     INTERVAL = log_interval*FREQ
-    RATIO = FREQ//INTERVAL
+    # intervals-per-second = 1/log_interval; scales per-interval token counts to
+    # tokens/sec. MUST be float division: integer // gave 0 for any log_interval > 1
+    # (e.g. --log-interval 2), zeroing all throughput and crashing on 1/RATIO below.
+    RATIO = FREQ/INTERVAL
     total_prompt = 0
     total_gen = 0
     total_latency = 0
