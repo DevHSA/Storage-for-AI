@@ -305,7 +305,11 @@ class MemoryModel():
         if device == Device.NPU:
             if self.npu_used + size > self.npu_mem:
                 raise RuntimeError(
-                    f"[MemoryModel] [node_id={self.node_id},inst={self.instance_id}] NPU: tried to load {size / MB_TO_BYTE:.2f}MB but only {(self.npu_mem - self.npu_used) / MB_TO_BYTE:.2f}MB is available."
+                    f"[MemoryModel] [node_id={self.node_id},inst={self.instance_id}] NPU: tried to load "
+                    f"{size / MB_TO_BYTE:.2f}MB but only {(self.npu_mem - self.npu_used) / MB_TO_BYTE:.2f}MB "
+                    f"is available. The NPU KV cache (npu_mem - weight) is over-subscribed by the in-flight "
+                    f"requests; their KV is locked so it cannot be spilled. Lower --max-num-seqs (fewer "
+                    f"concurrent sequences) or raise npu_mem."
                 )
             self.logger.info(
                 "NPU: used: %.2fMB load: %.2fMB after: %.2fMB",
