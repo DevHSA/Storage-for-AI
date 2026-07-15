@@ -921,6 +921,19 @@ jbof_load       1          LOCAL      0           JBOF:0      27493990     LOCAL
     and TTFT is identical with or without the deep tiers. (Only the on-NPU cache pages at the KV
     <code>block_size</code>, matching how the NPU allocates KV blocks.)
   </div>
+  <div class="box note">
+    <div class="t">How big is one KV unit? (reported per run)</div>
+    The KV bytes <b>one token</b> adds on a single GPU is
+    <code>2 · (kv_heads · head_dim) · n_layer · dtype_bytes ÷ tp_size</code> (the ×2 is K and V; the
+    <code>÷ tp_size</code> because each TP rank holds only its shard). The NPU allocates and evicts a
+    <b>block</b> (vLLM "page") at a time, so <b>one block = <code>block_size</code> tokens</b> is the
+    <b>smallest KV-cache unit</b> the NPU ever touches. The deep tiers store the <em>whole</em> context
+    (all ranks), so their per-token / per-block size is the per-GPU figure <b>× tp_size</b>.
+    <div style="margin-top:6px">Worked: <b>Qwen3-32B</b> (kv_heads 8, head_dim 128, 64 layers, fp16, TP=2)
+    → <b>128 KB / token / GPU</b> (256 KB full context), block_size 16 → <b>2 MB smallest KV block / GPU</b>
+    (4 MB full). Every run now prints a <code>KV Cache Unit</code> section, and the dashboard shows a
+    <b>🧩 KV-cache unit</b> card plus per-instance <code>KV/token</code> and <code>KV/block</code> columns.</div>
+  </div>
 
   <h3>The eviction rule</h3>
   <p>When a tier is full it evicts the <b>least-recently-used</b> entries — but only <b>unlocked</b>

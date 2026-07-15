@@ -1365,6 +1365,38 @@ def main():
         power_model.print_power_summary()
         print_markup(f"Power per {1/RATIO} sec (W): {power_model.power_time_series}")
         print_rule()
+    # ---- KV-cache unit sizing (per-token size + smallest KV block) ----
+    # A property of the model + config (independent of the workload): how many
+    # bytes one token adds to the KV cache, and the smallest unit the NPU ever
+    # allocates (one block/page = block_size tokens). Deep tiers store the whole
+    # context, so their per-token/per-block size is the per-GPU figure x tp_size.
+    if num_instances > 0:
+        def _kv_fmt(b):
+            b = float(b)
+            if b >= MB_TO_BYTE:
+                return f"{b/MB_TO_BYTE:.3f} MB"
+            if b >= 1024:
+                return f"{b/1024:.3f} KB"
+            return f"{b:.0f} B"
+        def _kv_row(label, val):
+            print_markup(f"{label:<54}{val}")
+        _mm0 = schedulers[0].memory
+        _pt, _tp, _bs = _mm0.get_kv(1), _mm0.num_npus, _mm0.block_size
+        print_rule("[sim.tagline]KV Cache Unit[/]")
+        _kv_row("Model / TP size:", f"{_mm0.model} / {_tp}")
+        _kv_row("KV dtype bytes / kv_heads / head_dim / layers:",
+                f"{_mm0.kv_fp} / {_mm0.kv_head} / {_mm0.head_dim} / {_mm0.n_layer}")
+        _kv_row("KV per token  (per GPU / TP rank):", _kv_fmt(_pt))
+        _kv_row(f"KV per token  (full context, all {_tp} ranks):", _kv_fmt(_pt * _tp))
+        _kv_row("Block size (tokens per KV block/page):", f"{_bs}")
+        _kv_row("Smallest KV unit = 1 block  (per GPU):", _kv_fmt(_pt * _bs))
+        _kv_row(f"                  1 block  (full context, all {_tp} ranks):", _kv_fmt(_pt * _bs * _tp))
+        _uniform = all(schedulers[i].memory.get_kv(1) == _pt and schedulers[i].memory.block_size == _bs
+                       for i in range(num_instances))
+        if not _uniform:
+            print_markup("(instances differ; showing instance 0 -- see dashboard per-instance KV columns)")
+        print_rule()
+
     # ---- Cluster-wide latency summary (pooled across ALL instances) ----
     # TTFT / TBT are the metrics that expose the tiered-cache benefit: a reused
     # prefix served from a fast tier keeps TTFT low, while a slow-tier reload

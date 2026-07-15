@@ -331,6 +331,15 @@ python -m serving --cluster-config configs/cluster/guide_8b_tiering.json \
   <div class="win"><b>What to look for:</b> the "KV spill memory over sim time" chart fills the deep tiers;
   the "Reload latency per tier" bars show JBOF short and COLDSTORE long; the by-tray drill-down shows 4 GPUs +
   2 CPUs per tray. Lower <code>--log-interval</code> → denser curves (must be &lt; total sim time).</div>
+  <div class="box note"><div class="t">🧩 KV-cache unit card</div>
+  Every run (dashboard or not) reports the <b>KV-cache granularity</b> for the loaded model/config: KV bytes
+  <b>per token</b> (per GPU, and full-context = ×tp_size for the deep tiers) and the <b>smallest KV unit</b> —
+  one block (<code>block_size</code> tokens), the chunk the NPU allocates/evicts at a time. It appears as a
+  <code>KV Cache Unit</code> section in the console summary and, with <code>--dashboard</code>, as the
+  <b>🧩 KV-cache unit</b> card (plus <code>KV/token</code> and <code>KV/block</code> columns in the NPU HBM
+  table). Formula: <code>per-token/GPU = 2·(kv_heads·head_dim)·n_layer·dtype_bytes ÷ tp_size</code>. For
+  Qwen3-32B (TP=2) that is <b>128 KB/token/GPU</b> and a <b>2 MB</b> smallest block — which is exactly the
+  <code>2.00MB</code> in the NPU-overflow message from §6.</div>
 
   <!-- 4f -->
   <h3 id="ex-session">4f. <code>--session-metrics</code> — the decode use-case (context parking)</h3>

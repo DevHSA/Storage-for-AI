@@ -34,6 +34,36 @@ def _pct(used, cap):
     return (used / cap * 100.0) if cap else 0.0
 
 
+def _kv_unit(m):
+    """KV-cache granularity for one MemoryModel.
+
+    * ``bytes_per_token_per_gpu`` = ``get_kv(1)`` = ``2 * kv_dim * n_layer *
+      kv_dtype_bytes / tp_size`` -- the KV bytes one token adds on a single GPU
+      (K and V, all layers; sharded across the tp_size ranks).
+    * A KV *block* (vLLM "page") is ``block_size`` tokens and is the SMALLEST
+      unit the NPU allocates/evicts, so ``block_bytes_per_gpu`` is the smallest
+      KV-cache unit on the NPU.
+    * The deep tiers (CPU / JBOF / COLDSTORE) store the WHOLE context, not a
+      single rank's shard, so their per-token / per-block size is the per-GPU
+      figure times ``tp_size`` (``*_full``)."""
+    per_tok_gpu = _safe_call(lambda: int(m.get_kv(1)), 0)
+    tp = _safe_call(lambda: int(m.num_npus), 1) or 1
+    bs = _safe_call(lambda: int(m.block_size), 0)
+    return {
+        "model": getattr(m, "model", ""),
+        "tp_size": tp,
+        "block_size": bs,                                # tokens per block (page)
+        "kv_dtype_bytes": _safe_call(lambda: int(m.kv_fp), 0),
+        "kv_heads": _safe_call(lambda: int(m.kv_head), 0),
+        "head_dim": _safe_call(lambda: int(m.head_dim), 0),
+        "n_layer": _safe_call(lambda: int(m.n_layer), 0),
+        "bytes_per_token_per_gpu": per_tok_gpu,          # KV bytes / token / GPU
+        "bytes_per_token_full": per_tok_gpu * tp,        # full-context / token (deep tiers)
+        "block_bytes_per_gpu": per_tok_gpu * bs,         # smallest NPU KV unit / GPU
+        "block_bytes_full": per_tok_gpu * bs * tp,       # one block, whole context
+    }
+
+
 def _percentiles(values_ns):
     vals = [v for v in values_ns if v is not None and v >= 0]
     if not vals or np is None:
@@ -178,16 +208,22 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
         used = max(getattr(m, "npu_used", 0), getattr(m, "weight", 0))
         cap = getattr(m, "npu_mem", 0)
         kv = _safe_call(lambda: m.npu_prefix_cache.total_memory_usage(), 0)
+        _ku = _kv_unit(m)
         instances_info.append({
             "instance": getattr(s, "instance_id", -1), "node": getattr(s, "node_id", -1),
             "num_npus": getattr(s, "num_npus", 1), "running": running_i, "waiting": waiting_i,
             "hbm_pct": _pct(used, cap), "npu_kv_bytes": kv,
             "hit_ratio": (hit_sum / req_i * 100.0) if req_i else 0.0,
+            "kv_per_token_bytes": _ku["bytes_per_token_per_gpu"],   # per GPU/rank
+            "kv_block_bytes": _ku["block_bytes_per_gpu"],           # smallest NPU KV unit
+            "kv_block_size": _ku["block_size"],
         })
         npu_hbm.append({
             "instance": getattr(s, "instance_id", -1), "node": getattr(s, "node_id", -1),
             "num_npus": getattr(s, "num_npus", 1), "used_bytes": used, "cap_bytes": cap,
             "pct": _pct(used, cap), "weight_bytes": getattr(m, "weight", 0),
+            "kv_per_token_bytes": _ku["bytes_per_token_per_gpu"],
+            "kv_block_bytes": _ku["block_bytes_per_gpu"],
         })
 
     # ---- tray rollup (dashboard-only grouping: <=4 GPUs / tray) --------- #
@@ -272,6 +308,20 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
             "resume_overhead_ms": (_rp["mean"] - _fp["mean"]) if (_first and _resumed) else 0.0,
         }
 
+    # ---- KV-cache unit sizing (per-token & per-block granularity) ------- #
+    # Reported once for the run (all instances of the same model share it) with
+    # a ``uniform`` flag; heterogeneous instances also carry their own numbers
+    # in ``instances[].kv_*``.
+    kv_unit = None
+    _kus = [_kv_unit(s.memory) for s in schedulers]
+    if _kus:
+        base = dict(_kus[0])
+        base["uniform"] = all(
+            u["bytes_per_token_per_gpu"] == _kus[0]["bytes_per_token_per_gpu"]
+            and u["block_size"] == _kus[0]["block_size"] for u in _kus)
+        base["n_instances"] = len(_kus)
+        kv_unit = base
+
     # ---- timeline history (append this interval's point) ---------------- #
     if record_point and history is not None:
         history.append({
@@ -295,6 +345,7 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
         "config": config, "counters": counters, "throughput": thr,
         "tiers": tiers, "trays": trays_info, "instances": instances_info, "npu_hbm": npu_hbm,
         "prefix_cache": prefix_cache, "latency": latency, "sessions": sessions,
+        "kv_unit": kv_unit,
     }
 
 

@@ -99,6 +99,7 @@
   </div>
   <div id="banner" class="banner"><div class="sub">Waiting for a run started with <code>--dashboard</code>…</div></div>
   <details class="specs"><summary>⚙️ Tier specs — bandwidth / latency</summary><div id="specs"></div></details>
+  <details class="specs" open><summary>🧩 KV-cache unit — bytes per token &amp; smallest KV block</summary><div id="kvunit"></div></details>
   <div class="progress"><div id="progbar" style="width:0%"></div></div>
   <div id="progtext" class="sub" style="margin-top:6px"></div>
 
@@ -274,6 +275,27 @@ async function poll(){
       <td>${s.link_bw??'—'}</td><td>${s.link_latency!=null?fi(s.link_latency):'—'}</td></tr>`).join("")+`</table>`
     : '<div class="sub">n/a</div>';
 
+  // ---- KV-cache unit sizing ---- //
+  const ku=d.kv_unit;
+  if(ku){
+    const rows=[
+      ["KV per <b>token</b> · per GPU (TP rank)", fb(ku.bytes_per_token_per_gpu), "what one token adds to a GPU's KV cache"],
+      ["KV per <b>token</b> · full context", fb(ku.bytes_per_token_full), `all ${ku.tp_size} TP ranks — the size stored in CPU / JBOF / COLDSTORE`],
+      ["Block size (page)", `${fi(ku.block_size)} tokens`, "KV is allocated / evicted a block at a time"],
+      ["<b>Smallest KV unit</b> — one block · per GPU", `<b>${fb(ku.block_bytes_per_gpu)}</b>`, "the smallest chunk of KV cache the NPU ever allocates"],
+      ["One block · full context", fb(ku.block_bytes_full), `block × ${ku.tp_size} TP ranks`],
+    ];
+    $("kvunit").innerHTML =
+      `<table><tr><th>quantity</th><th>size</th><th class="sub">meaning</th></tr>`+
+      rows.map(([k,v,m])=>`<tr><td>${k}</td><td style="font-weight:700;white-space:nowrap">${v}</td><td class="sub">${m}</td></tr>`).join("")+
+      `</table>`+
+      `<div class="sub" style="font-size:11px;margin-top:6px">per-token/GPU = 2·(kv_heads·head_dim)·n_layer·dtype_bytes ÷ tp_size = `+
+      `2·(${fi(ku.kv_heads)}·${fi(ku.head_dim)})·${fi(ku.n_layer)}·${fi(ku.kv_dtype_bytes)} ÷ ${ku.tp_size}`+
+      (ku.uniform?` &nbsp;·&nbsp; all ${fi(ku.n_instances)} instance(s) identical`
+                 :` &nbsp;·&nbsp; <span style="color:var(--warn)">instances differ — see per-instance columns below</span>`)+
+      `</div>`;
+  } else { $("kvunit").innerHTML='<div class="sub">n/a</div>'; }
+
   const done=ct.requests_finished||0, tot=ct.requests_total||0;
   const pct = tot? Math.min(100,100*done/tot) : (status==="done"?100:0);
   $("progbar").style.width=pct+"%";
@@ -354,9 +376,9 @@ async function poll(){
   }
 
   renderTable($("hbm"),
-    [{h:"instance",k:"i"},{h:"node",k:"n"},{h:"GPUs",k:"g"},{h:"used/GPU",k:"u"},{h:"HBM/GPU",k:"c"},{h:"% used",k:"p"},{h:"weight/GPU",k:"w"}],
+    [{h:"instance",k:"i"},{h:"node",k:"n"},{h:"GPUs",k:"g"},{h:"used/GPU",k:"u"},{h:"HBM/GPU",k:"c"},{h:"% used",k:"p"},{h:"weight/GPU",k:"w"},{h:"KV/token",k:"kt"},{h:"KV/block",k:"kb"}],
     (d.npu_hbm||[]).map(h=>({i:h.instance,n:h.node,g:h.num_npus,u:fb(h.used_bytes),c:fb(h.cap_bytes),
-      p:(h.pct||0).toFixed(2),w:fb(h.weight_bytes)})));
+      p:(h.pct||0).toFixed(2),w:fb(h.weight_bytes),kt:fb(h.kv_per_token_bytes),kb:fb(h.kv_block_bytes)})));
   $("hbm").insertAdjacentHTML("beforeend",
     `<div class="sub" style="font-size:11px;margin-top:6px">Values are <b>per GPU</b> (per TP rank). A TP=N instance spans N GPUs, each holding weight/N of the model + its KV shard.</div>`);
 
