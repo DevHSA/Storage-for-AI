@@ -384,6 +384,29 @@ python -m serving --cluster-config configs/cluster/guide_8b_tiering.json \
     <code>--dataset</code> flag; it auto-detects <code>sub_requests</code>.)
   </div>
 
+  <h4>How a session resumes — it rides on prefix caching</h4>
+  <p><b>There is no separate "session" object or session store.</b> <code>session_id</code> only labels turns
+  so the metric can split cold from warm; it does <em>not</em> drive scheduling, storage, or lookup. A session
+  turn is an ordinary request, its context is an ordinary prefix, and a resume is an ordinary prefix-cache hit.
+  Concretely:</p>
+  <table>
+    <tr><th>Stage</th><th>What actually happens</th></tr>
+    <tr><td><b>Turn finishes</b></td><td>The request is done; its KV survives only as a <b>retained prefix</b> in the NPU radix cache (<code>cache_finished_req(Device.NPU)</code>) — unlocked and LRU-evictable. Under <code>exclusive</code> it is <em>not</em> eagerly copied anywhere; it just sits in the NPU.</td></tr>
+    <tr><td><b>Session idle</b> (the <code>tool_duration_ns</code> gap)</td><td>The context <b>stays in the NPU until eviction pressure forces it out</b> — it is not proactively "parked" on idle. If other active requests need NPU KV, the LRU evictor demotes this unlocked prefix one tier down and cascades <span class="pill tag-npu">NPU</span>→<span class="pill tag-cpu">CPU</span>→<span class="pill tag-jbof">JBOF</span>→<span class="pill tag-cold">COLDSTORE</span> (<code>_evict_npu</code>/<code>_evict_tier</code>). No pressure ⇒ it stays in the NPU.</td></tr>
+    <tr><td><b>Next turn arrives</b></td><td>A <b>new</b> request whose <code>input_tok_ids</code> are the accumulated conversation. <code>prefix_match</code> (<code>memory_model.py:749</code>) probes <b>every tier's radix tree by token id</b> — NPU, then CPU, then each deep tier — and takes the <b>longest matching prefix</b>. It is <b>content-addressed</b>, not a session-id lookup: it finds the context wherever it landed.</td></tr>
+    <tr><td><b>Reload &amp; answer</b></td><td>The matched prefix is reloaded from the <b>shallowest tier that still holds each segment</b> (still in NPU ⇒ 0 reload; in JBOF ⇒ ~80&nbsp;µs/access; in COLDSTORE ⇒ ~2&nbsp;ms/access), <code>num_computed_tokens</code> jumps past the hit so those tokens aren't recomputed, and only the new user tokens are prefilled. That reload lands in the turn's TTFT.</td></tr>
+  </table>
+  <div class="box insight">
+    <div class="t">Prefix caching <em>is</em> the session mechanism</div>
+    A resume is just a request that shares a long prefix (the whole prior conversation) with earlier turns, so
+    <b>the prefix cache is always what's checked</b> — there is nothing session-specific to check. The
+    growing-prefix convention (turn <i>t</i> input = turn <i>t−1</i> input+output + new tokens) is what makes
+    the token ids actually match. <b>Corollary:</b> because a resumed turn's TTFT also includes queuing and the
+    prefill of the (larger) accumulated context, a warm turn can be <em>slower</em> than a cold one even when
+    the reload is free — so the JBOF benefit only appears once the context is genuinely evicted to a deep tier
+    and reloaded (shrink <code>npu_mem</code> so it spills).
+  </div>
+
   <h4>Generate the multi-turn workload (once)</h4>
   <pre class="code">python3 workloads/generators/make_multiturn.py workloads/guide_sessions_qwen.jsonl 16 3 512 16 16 500 40
 <span class="cm"># 16 sessions x 3 turns; 512-tok context; +16 user &amp; 16 decode/turn; 500 ms idle gap between turns</span></pre>
@@ -451,6 +474,7 @@ TTFT resumed-turn       762.55    ...                                       </pr
   <table>
     <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
     <tr><td>Crash: <code>NPU: tried to load X but only Y available</code></td><td>Too many concurrent requests' locked KV for the NPU KV capacity (<code>npu_mem − weight</code>).</td><td>Lower <code>--max-num-seqs</code> (1 for tight NPUs), or raise <code>npu_mem</code> so KV ≥ one grown request.</td></tr>
+    <tr><td>Crash: <code>[Scheduler inst=N] Deadlock: a waiting request needs more NPU KV cache than is available&hellip;</code></td><td>A single request's grown KV exceeds the whole NPU KV capacity, so it can never be admitted even with the NPU empty. The scheduler now detects this permanent stall (nothing to preempt, nothing in flight) and fails fast instead of spinning forever.</td><td>Raise <code>npu_mem</code> so KV holds at least <em>one</em> fully-grown request (<code>npu_mem − weight ≥</code> one context's KV bytes), lower <code>--max-num-seqs</code>, or shorten the requests.</td></tr>
     <tr><td>CPU/JBOF/COLDSTORE all 0%, hits 0</td><td>NPU never fills — nothing spills (large NPU + small workload).</td><td>Shrink <code>npu_mem</code> toward the weight, or use a bigger/fill workload.</td></tr>
     <tr><td>WITH-JBOF looks identical to WITHOUT</td><td>JBOF overflows → reused data lands in COLDSTORE either way.</td><td>Grow <code>jbof_mem</code> ≥ the reused working set (≈ #distinct contexts × context KV; a context costs <b>2×</b> the bytes in CPU/JBOF/COLDSTORE that it does in the NPU, since the pooled tiers count both TP ranks).</td></tr>
     <tr><td>A tier never fills even under pressure</td><td>Under <code>exclusive</code>, an evicted prefix that can't fit the tier below is dropped (KV is recomputable).</td><td>Give each tier ≥ one prefix's worth of capacity.</td></tr>

@@ -194,6 +194,7 @@ class Scheduler:
                 # print("Evict Request to CPU due to memory limitation")
                 # preempt request one by one until there is enough space
                 if len(gen_req) == 0:
+                    self._raise_if_deadlocked(batch_len)
                     return None
                 
                 # check already evicted request
@@ -478,10 +479,11 @@ class Scheduler:
                     # No request to evict but no memory - rollback prefix cache lock
                     for req in batch_req:
                         if req.is_prefill() and req._prefix_locked:
-                            
+
                             self.memory.unlock_prefix(req, Device.NPU)
                             self.memory.erase_prefix_info(req)
                             req._prefix_locked = False
+                    self._raise_if_deadlocked(batch_len)
                     return None
                 
                 # Check already evicted request
@@ -865,6 +867,26 @@ class Scheduler:
     def get_batch_id(self):
         self.batch_ids += 1
         return self.batch_ids
+
+    def _raise_if_deadlocked(self, batch_len):
+        """Turn a silent scheduling live-lock into a clear, actionable error.
+
+        We reach this only when the batch does not fit in the NPU KV cache even
+        after counting every reclaimable (unlocked) prefix, AND there is no decode
+        request to preempt. If, on top of that, there are waiting requests
+        (batch_len >= 1) and NOTHING in flight to finish and free KV, the instance
+        can never make progress — returning "no batch" every step would spin the
+        sim forever. Fail fast with guidance instead. (When a batch IS in flight,
+        this is a legitimate transient wait, so we do not raise.)"""
+        inflight_reqs = sum(len(b.requests) for b in self.inflight)
+        if batch_len >= 1 and inflight_reqs == 0:
+            raise RuntimeError(
+                f"[Scheduler inst={self.instance_id}] Deadlock: a waiting request needs more NPU KV "
+                f"cache than is available even after evicting every reclaimable prefix, and there is "
+                f"nothing running to preempt or in flight to free space. The NPU KV cache "
+                f"(npu_mem minus the model weight) is too small for this workload. "
+                f"Raise npu_mem, lower --max-num-seqs, or use shorter requests. "
+                f"(Previously this spun forever instead of reporting the problem.)")
 
     # add a request
     def add_request(self, req, is_init=True, session_id=None, sub_request_index=None):
