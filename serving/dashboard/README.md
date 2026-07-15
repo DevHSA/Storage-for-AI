@@ -41,6 +41,23 @@ docker exec servingsim_docker bash -lc "cd /app/LLMServingSim && \
 Open **http://localhost:8000** — it auto-refreshes ~2×/sec. Lower
 `--log-interval` for denser live updates (more throughput-chart points).
 
+## Cluster config builder (`config_builder.html`)
+
+A **drag-and-drop GUI** for authoring `configs/cluster/*.json` — no hand-editing.
+With `serve.py` running, open **http://localhost:8000/config**; it also works
+fully offline by opening `serving/dashboard/config_builder.html` directly.
+
+- Drag **Node / Instance / JBOF / COLDSTORE / FLASH / CPU** from the palette onto
+  the canvas; set each component's capacity / BW / latency inline. Vera-Rubin and
+  scaled presets are one click; templates seed a Qwen 2×2 or a Vera-Rubin tray.
+- **Live validation** against the real parser rules (weights must fit the NPU, KV
+  room ≥ one block, a node needs a CPU pool or per-instance CPU on all instances,
+  TP∈{1,2} is profiled, prefix-storage vs declared tiers) plus a live
+  weight / KV-per-token / smallest-block readout per instance.
+- **Download** the JSON, **Copy** it, or (when served) **Save to
+  configs/cluster/** to write it into the repo. The **run command** panel shows
+  the matching CLI flags (which live outside the JSON).
+
 ## Streamlit alternative
 
 If you have a Python with pip (≤3.13):
@@ -83,4 +100,9 @@ Point at a non-default snapshot via the sidebar or `LLMSS_DASHBOARD_FILE`.
     running / waiting requests, hit ratio.
   - **By GPU/instance** — per GPU/instance: running / waiting, NPU HBM %, KV
     bytes, prefix-cache hit ratio.
-- **NPU HBM** — per-instance weight + KV occupancy.
+- **NPU HBM** — per-instance weight + KV occupancy, plus **KV/token** and
+  **KV/block** (the smallest KV-cache allocation unit) per GPU.
+- **KV-cache unit card** — for the loaded model/config: KV bytes per token
+  (per-GPU and full-context = ×tp_size) and one block = `block_size` tokens =
+  the smallest KV unit. Also printed as a `KV Cache Unit` section in the console
+  summary of every run.

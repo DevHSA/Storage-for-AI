@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLMServingSim · Cluster Config Builder</title>
+<style>
+:root{
+  --bg:#0b0f14; --panel:#121821; --panel2:#0e141c; --line:#1e2733; --txt:#e6edf3;
+  --muted:#8b98a5; --accent:#3fb950; --accent2:#58a6ff;
+  --npu:#3fb950; --cpu:#58a6ff; --flash:#d29922; --jbof:#bc8cff; --cold:#8b98a5;
+  --warn:#d29922; --bad:#f85149; --codebg:#0d1117; --codetx:#a5d6ff;
+}
+body.light{
+  --bg:#f6f8fa; --panel:#fff; --panel2:#eef1f4; --line:#d0d7de; --txt:#1f2328;
+  --muted:#59636e; --accent:#1a7f37; --accent2:#0969da;
+  --npu:#1a7f37; --cpu:#0969da; --flash:#9a6700; --jbof:#8250df; --cold:#59636e;
+  --warn:#9a6700; --bad:#cf222e; --codebg:#f0f3f6; --codetx:#0550ae;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5}
+code,pre,.mono{font-family:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace}
+a{color:var(--accent2)}
+header{position:sticky;top:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--line);
+  padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+header h1{font-size:15px;margin:0;font-weight:700}
+header .sub{color:var(--muted);font-size:12px}
+.spacer{flex:1}
+.wrap{display:grid;grid-template-columns:220px 1fr 420px;gap:14px;padding:14px;align-items:start}
+@media(max-width:1200px){.wrap{grid-template-columns:200px 1fr}.right{grid-column:1/-1}}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+.sticky{position:sticky;top:62px}
+button,select,input{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);
+  border-radius:7px;padding:5px 8px}
+button{cursor:pointer}
+button:hover{border-color:var(--accent2)}
+button.primary{background:var(--accent);color:#03210c;border-color:transparent;font-weight:700}
+button.ghost{background:transparent}
+button.mini{padding:2px 7px;font-size:12px}
+input[type=number]{width:100%}
+input[type=text]{width:100%}
+label.f{display:block;margin:6px 0 2px;font-size:11px;color:var(--muted)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row>div{flex:1;min-width:0}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;color:#03130a}
+.tag-npu{background:var(--npu)} .tag-cpu{background:var(--cpu);color:#04121f}
+.tag-flash{background:var(--flash);color:#1f1400} .tag-jbof{background:var(--jbof);color:#160a24}
+.tag-cold{background:var(--cold);color:#0b0f14} .tag-node{background:var(--accent2);color:#04121f}
+.tag-inst{background:#d2a8ff;color:#160a24}
+/* palette */
+.palette-item{display:flex;align-items:center;gap:8px;border:1px dashed var(--line);border-radius:8px;
+  padding:8px 10px;margin-bottom:8px;cursor:grab;background:var(--panel2)}
+.palette-item:active{cursor:grabbing}
+.palette-item .dot{width:10px;height:10px;border-radius:3px;flex:none}
+.palette-item small{color:var(--muted);display:block;font-size:11px}
+.hint{color:var(--muted);font-size:11px;margin:2px 0 10px}
+/* canvas / dropzones */
+.drop{border:1.5px dashed var(--line);border-radius:10px;transition:.12s}
+.drop.over{border-color:var(--accent);background:rgba(63,185,80,.08)}
+.emptyzone{color:var(--muted);text-align:center;padding:18px;font-size:12px}
+.node{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:12px;background:var(--panel2)}
+.node>.hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.node .title{font-weight:700}
+.inst{border:1px solid var(--line);border-radius:9px;padding:10px;margin:8px 0;background:var(--panel)}
+.inst>.hd{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.calc{font-size:11px;color:var(--muted);margin-top:6px}
+.calc b{color:var(--txt)}
+.podtier{border:1px solid var(--line);border-radius:9px;padding:10px;margin:8px 0;background:var(--panel)}
+details.adv{margin-top:8px;border-top:1px dashed var(--line);padding-top:6px}
+details.adv>summary{cursor:pointer;color:var(--muted);font-size:12px}
+.grp{border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px}
+.grp>.gh{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+/* right pane */
+pre.out{background:var(--codebg);color:var(--codetx);border:1px solid var(--line);border-radius:8px;
+  padding:10px;max-height:340px;overflow:auto;white-space:pre;font-size:12px;margin:0}
+pre.cmd{background:var(--codebg);color:var(--txt);border:1px solid var(--line);border-radius:8px;
+  padding:10px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0}
+.v{border-radius:7px;padding:6px 9px;margin:5px 0;font-size:12px;border-left:4px solid var(--line);background:var(--panel2)}
+.v.error{border-color:var(--bad)} .v.warn{border-color:var(--warn)} .v.ok{border-color:var(--accent)}
+.v.info{border-color:var(--accent2)}
+.v b{font-weight:700}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.small{font-size:11px;color:var(--muted)}
+.kbd{font-family:inherit;background:var(--codebg);border:1px solid var(--line);border-radius:5px;padding:0 5px}
+.remove{color:var(--bad);border-color:transparent;background:transparent;font-weight:700}
+select.full{width:100%}
+.badge{font-size:10px;padding:1px 6px;border-radius:5px;border:1px solid var(--line);color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧱 LLMServingSim · Cluster Config Builder</h1>
+  <span class="sub">drag components → set capacities → download a runnable <code>configs/cluster/*.json</code></span>
+  <span class="spacer"></span>
+  <span id="saveStatus" class="small"></span>
+  <button class="mini ghost" id="themeBtn">🌙 theme</button>
+</header>
+
+<div class="wrap">
+  <!-- ================= PALETTE ================= -->
+  <div class="left">
+    <div class="card sticky">
+      <h2>Components</h2>
+      <div class="hint">Drag onto the canvas. Or click <span class="kbd">+</span> on a target.</div>
+      <div id="palette">
+        <div class="palette-item" draggable="true" data-comp="node">
+          <span class="dot" style="background:var(--accent2)"></span>
+          <div><b>Node</b><small>a server / rack unit</small></div>
+        </div>
+        <div class="palette-item" draggable="true" data-comp="instance">
+          <span class="dot" style="background:#d2a8ff"></span>
+          <div><b>Instance</b><small>model on N GPUs (TP). Drop on a node</small></div>
+        </div>
+        <div class="palette-item" draggable="true" data-comp="flash">
+          <span class="dot" style="background:var(--flash)"></span>
+          <div><b>FLASH</b><small>node-local NVMe tier. Drop on a node</small></div>
+        </div>
+        <div class="palette-item" draggable="true" data-comp="nodecpu">
+          <span class="dot" style="background:var(--cpu)"></span>
+          <div><b>Node CPU pool</b><small>explicit host DRAM. Drop on a node</small></div>
+        </div>
+        <div class="palette-item" draggable="true" data-comp="jbof">
+          <span class="dot" style="background:var(--jbof)"></span>
+          <div><b>JBOF</b><small>pod-wide pooled flash. Drop on Pod tiers</small></div>
+        </div>
+        <div class="palette-item" draggable="true" data-comp="coldstore">
+          <span class="dot" style="background:var(--cold)"></span>
+          <div><b>COLDSTORE</b><small>pod-wide network storage. Drop on Pod tiers</small></div>
+        </div>
+      </div>
+      <h2 style="margin-top:14px">Templates</h2>
+      <div class="row">
+        <button class="mini" data-tpl="blank">Blank</button>
+        <button class="mini" data-tpl="qwen">Qwen 2×2 +JBOF</button>
+        <button class="mini" data-tpl="vr">Vera Rubin tray</button>
+      </div>
+      <div class="hint" style="margin-top:8px">The <b>run command</b> on the right captures the flags that live outside the JSON.</div>
+    </div>
+  </div>
+
+  <!-- ================= CANVAS ================= -->
+  <div class="center">
+    <div class="card">
+      <h2>Cluster fabric (root)</h2>
+      <div class="row">
+        <div>
+          <label class="f">Config filename</label>
+          <input type="text" data-scope="top" data-field="filename" id="fname">
+        </div>
+        <div>
+          <label class="f">Inter-node link BW (GB/s)</label>
+          <input type="number" data-scope="top" data-field="link_bw">
+        </div>
+        <div>
+          <label class="f">Inter-node link latency (ns)</label>
+          <input type="number" data-scope="top" data-field="link_latency">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="align-items:center">
+        <h2 style="margin:0;flex:1">Pod-wide tiers <span class="small">(shared across all nodes)</span></h2>
+        <button class="mini" data-add="jbof">+ JBOF</button>
+        <button class="mini" data-add="coldstore">+ COLDSTORE</button>
+      </div>
+      <div class="drop" data-drop="pod" id="podzone" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="align-items:center">
+        <h2 style="margin:0;flex:1">Nodes</h2>
+        <button class="mini" data-add="node">+ Node</button>
+      </div>
+      <div class="drop" data-drop="canvas" id="canvas" style="margin-top:8px;min-height:80px;padding:8px"></div>
+    </div>
+  </div>
+
+  <!-- ================= OUTPUT ================= -->
+  <div class="right">
+    <div class="card sticky">
+      <div class="toolbar">
+        <button class="primary" id="dlBtn">⬇ Download JSON</button>
+        <button id="copyBtn">⧉ Copy JSON</button>
+        <button id="saveBtn" style="display:none">💾 Save to configs/cluster/</button>
+      </div>
+      <h2>Validation</h2>
+      <div id="validation"></div>
+      <h2 style="margin-top:12px">config JSON</h2>
+      <pre class="out" id="jsonout"></pre>
+      <h2 style="margin-top:12px">suggested run command <button class="mini ghost" id="copyCmd">⧉ copy</button></h2>
+      <pre class="cmd" id="runcmd"></pre>
+      <div class="small" style="margin-top:8px">Flags shown here (prefix-storage, tier-policy, cpu-scope, dtype, block-size, dataset, dashboard) are <b>CLI options, not JSON fields</b> — they change per run.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ------------------------------------------------------------------ data ---
+const DTYPE_BYTES = {float16:2, bfloat16:2, float32:4, fp8:1, int8:1};
+const MODELS = [
+  {name:"Qwen/Qwen3-32B",                        sim:true,  n_layer:64, heads:64, kv_heads:8, head_dim:128, w_fp16:61.0,  moe:false},
+  {name:"Qwen/Qwen3-30B-A3B-Instruct-2507",      sim:true,  n_layer:48, heads:32, kv_heads:4, head_dim:128, w_fp16:56.9,  moe:true},
+  {name:"meta-llama/Llama-3.1-8B",               sim:true,  n_layer:32, heads:32, kv_heads:8, head_dim:128, w_fp16:15.0,  moe:false},
+  {name:"meta-llama/Llama-3.1-8B-mini4L",        sim:true,  n_layer:4,  heads:32, kv_heads:8, head_dim:128, w_fp16:3.6,   moe:false},
+  {name:"meta-llama/Llama-3.1-70B",              sim:false, n_layer:80, heads:64, kv_heads:8, head_dim:128, w_fp16:131.5, moe:false},
+  {name:"microsoft/Phi-mini-MoE-instruct",       sim:false, n_layer:32, heads:32, kv_heads:8, head_dim:128, w_fp16:14.2,  moe:true},
+  {name:"mistralai/Mixtral-8x7B-v0.1",           sim:false, n_layer:32, heads:32, kv_heads:8, head_dim:128, w_fp16:87.0,  moe:true},
+];
+const MODEL_BY = Object.fromEntries(MODELS.map(m=>[m.name,m]));
+const HARDWARE = [ {name:"RTXPRO6000", hbm:96, profiled:true}, {name:"H100", hbm:80, profiled:false} ];
+// tier field presets: [mem_size, mem_bw, mem_latency, link_bw, link_latency]
+const NPU_PRESETS = {
+  "RTX PRO 6000 (96)":   [96,   22000, 10],
+  "Vera Rubin (288)":    [288,  22000, 10],
+  "Vera Rubin small (24)":[24,  22000, 10],
+  "H100 (80)":           [80,   3350,  10],
+};
+const CPU_PRESETS = {
+  "Vera CPU (1536)": [1536, 1200, 120],
+  "small (32)":      [32,   1200, 120],
+};
+const JBOF_PRESETS = {
+  "Vera Rubin (256 TiB)": [262144, 64, 80000, 100, 2000],
+  "small (512 GiB)":      [512,    64, 80000, 100, 2000],
+};
+const COLD_PRESETS = {
+  "Vera Rubin (2 PiB)": [2097152, 4, 2000000, 16, 20000],
+  "small (4096 GiB)":   [4096,    4, 2000000, 16, 20000],
+};
+const FLASH_PRESETS = { "NVMe (6 GiB node)": [6, 14, 10000, 0, 0] };
+const LINK_PRESETS = {
+  "NVLink-C2C (1800/1000)": [1800, 1000],
+  "Ethernet fabric (100/2000)": [100, 2000],
+};
+
+// ------------------------------------------------------------------ state ---
+let uid = 0; const nid = () => "x" + (++uid);
+let state;
+function tier(preset){ return {mem_size:preset[0], mem_bw:preset[1], mem_latency:preset[2], link_bw:preset[3]||0, link_latency:preset[4]||0}; }
+function newInstance(){
+  return { id:nid(), model:"meta-llama/Llama-3.1-8B", hardware:"RTXPRO6000", tp_size:1,
+    npu:tier(NPU_PRESETS["RTX PRO 6000 (96)"]), cpu:null, pd_type:null,
+    adv:{ep_size:"", dp_group:"", num_npus:"", pp_size:"",
+         place:{on:false, weights:"npu", kv_loc:"npu", kv_evict_loc:"cpu"},
+         ovr:{on:false, max_num_seqs:"", block_size:"", dtype:"", kv_cache_dtype:"", enable_prefix_caching:""}} };
+}
+function newNode(){ return {id:nid(), cpu:null, flash:null, instances:[]}; }
+
+function tplBlank(){
+  state = { filename:"my_cluster",
+    run:{dtype:"float16", block_size:16, prefix_storage:"None", tier_policy:"inclusive", cpu_scope:"per_node",
+         enable_prefix_caching:true, enable_prefix_sharing:false, max_num_seqs:0,
+         dataset:"workloads/example_trace.jsonl", dashboard:true},
+    link_bw:1800, link_latency:1000, pod:{jbof:null, coldstore:null}, nodes:[] };
+}
+function tplQwen(){
+  tplBlank();
+  state.filename="qwen_2x2_jbof"; state.run.prefix_storage="JBOF"; state.run.enable_prefix_sharing=true;
+  state.run.cpu_scope="per_instance"; state.run.max_num_seqs=8;
+  state.pod.jbof = tier(JBOF_PRESETS["small (512 GiB)"]);
+  state.pod.coldstore = tier(COLD_PRESETS["small (4096 GiB)"]);
+  for(let n=0;n<2;n++){
+    const node=newNode();
+    for(let i=0;i<2;i++){
+      const inst=newInstance();
+      inst.model="Qwen/Qwen3-32B"; inst.hardware="RTXPRO6000"; inst.tp_size=2;
+      inst.npu=tier([62,22000,10]); inst.cpu={mem_size:8,mem_bw:1200,mem_latency:120};
+      node.instances.push(inst);
+    }
+    state.nodes.push(node);
+  }
+}
+function tplVR(){
+  tplBlank();
+  state.filename="vera_rubin_tray"; state.link_bw=1800; state.link_latency=1000;
+  state.run.prefix_storage="COLDSTORE"; state.run.enable_prefix_sharing=true; state.run.cpu_scope="per_instance";
+  state.pod.jbof=tier(JBOF_PRESETS["Vera Rubin (256 TiB)"]);
+  state.pod.coldstore=tier(COLD_PRESETS["Vera Rubin (2 PiB)"]);
+  for(let n=0;n<2;n++){
+    const node=newNode();
+    for(let i=0;i<4;i++){ // 2 trays worth = 4 superchips
+      const inst=newInstance();
+      inst.model="meta-llama/Llama-3.1-8B"; inst.tp_size=2;
+      inst.npu=tier(NPU_PRESETS["Vera Rubin (288)"]); inst.cpu={mem_size:1536,mem_bw:1200,mem_latency:120};
+      node.instances.push(inst);
+    }
+    state.nodes.push(node);
+  }
+}
+
+// ------------------------------------------------------------- config build ---
+function num(v, d){ const n=Number(v); return isFinite(n)?n:(d||0); }
+function memOut(m){ return {mem_size:num(m.mem_size), mem_bw:num(m.mem_bw), mem_latency:num(m.mem_latency)}; }
+function tierOut(t){
+  const o = {mem_size:num(t.mem_size), mem_bw:num(t.mem_bw), mem_latency:num(t.mem_latency)};
+  if(num(t.link_bw)>0 || num(t.link_latency)>0){ o.link_bw=num(t.link_bw); o.link_latency=num(t.link_latency); }
+  return o;
+}
+function instOut(i){
+  const o = { model_name:i.model, hardware:i.hardware, npu_mem:memOut(i.npu) };
+  o.tp_size = num(i.tp_size,1);
+  if(i.cpu) o.cpu_mem = memOut(i.cpu);
+  o.pd_type = i.pd_type || null;           // key always present; null is valid
+  const a=i.adv;
+  if(a.ep_size!=="") o.ep_size=num(a.ep_size);
+  if(a.pp_size!=="") o.pp_size=num(a.pp_size);
+  if(a.num_npus!=="") o.num_npus=num(a.num_npus);
+  if(a.dp_group!=="") o.dp_group=a.dp_group;
+  if(a.place.on) o.placement={default:{weights:a.place.weights, kv_loc:a.place.kv_loc, kv_evict_loc:a.place.kv_evict_loc}};
+  if(a.ovr.on){
+    if(a.ovr.max_num_seqs!=="") o.max_num_seqs=num(a.ovr.max_num_seqs);
+    if(a.ovr.block_size!=="")   o.block_size=num(a.ovr.block_size);
+    if(a.ovr.dtype!=="")        o.dtype=a.ovr.dtype;
+    if(a.ovr.kv_cache_dtype!=="") o.kv_cache_dtype=a.ovr.kv_cache_dtype;
+    if(a.ovr.enable_prefix_caching!=="") o.enable_prefix_caching=(a.ovr.enable_prefix_caching==="true");
+  }
+  return o;
+}
+function buildConfig(){
+  const c = { num_nodes: state.nodes.length, link_bw:num(state.link_bw), link_latency:num(state.link_latency) };
+  if(state.pod.jbof)      c.jbof_mem      = tierOut(state.pod.jbof);
+  if(state.pod.coldstore) c.coldstore_mem = tierOut(state.pod.coldstore);
+  c.nodes = state.nodes.map(n=>{
+    const node = { num_instances: n.instances.length, instances: n.instances.map(instOut) };
+    if(n.cpu)   node.cpu_mem   = memOut(n.cpu);
+    if(n.flash) node.flash_mem = tierOut(n.flash);
+    return node;
+  });
+  return c;
+}
+
+// --------------------------------------------------------------- calc / kv ---
+function dtypeBytes(){ return DTYPE_BYTES[state.run.dtype] || 2; }
+function instCalc(i){
+  const m = MODEL_BY[i.model]; const tp = num(i.tp_size,1) || 1;
+  // honor per-instance runtime overrides (the sim does), else fall back to run defaults
+  const ov = (i.adv && i.adv.ovr) ? i.adv.ovr : {on:false};
+  const dt   = (ov.on && ov.dtype)          ? ov.dtype          : state.run.dtype;
+  const kvdt = (ov.on && ov.kv_cache_dtype) ? ov.kv_cache_dtype : state.run.kv_cache_dtype;
+  const b  = DTYPE_BYTES[dt] || 2;
+  const kvB = (kvdt==="fp8") ? 1 : b;
+  const bs = num((ov.on && ov.block_size!=="") ? ov.block_size : state.run.block_size, 16) || 16;
+  if(!m) return {weightGpu:0, kvTok:0, block:0, kvRoom:0, bs, unknown:true};
+  const weightFull = m.w_fp16 * (b/2);
+  const weightGpu = weightFull / tp;
+  const kvTok = 2 * (m.kv_heads*m.head_dim) * m.n_layer * kvB / tp; // bytes/token/GPU
+  const block = kvTok * bs;
+  const kvRoom = num(i.npu.mem_size) - weightGpu; // GiB
+  return {weightGpu, kvTok, block, kvRoom, bs, m, tp};
+}
+function fmtB(b){ b=+b||0; if(b>=2**30) return (b/2**30).toFixed(2)+" GiB"; if(b>=2**20) return (b/2**20).toFixed(2)+" MB";
+  if(b>=2**10) return (b/2**10).toFixed(1)+" KB"; return b.toFixed(0)+" B"; }
+
+// ------------------------------------------------------------------ render ---
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function opts(list, sel){ return list.map(o=>`<option value="${esc(o)}"${o===sel?" selected":""}>${esc(o)}</option>`).join(""); }
+function modelOpts(sel){ return MODELS.map(m=>`<option value="${esc(m.name)}"${m.name===sel?" selected":""}>${esc(m.name)}${m.sim?"":"  (needs profiling)"}</option>`).join(""); }
+function presetSel(kind, map){
+  return `<select class="full presetSel" data-preset="${kind}"><option value="">— preset —</option>`+
+    Object.keys(map).map(k=>`<option value="${esc(k)}">${esc(k)}</option>`).join("")+`</select>`;
+}
+function memFields(scope, id, m, withLink){
+  const f = (field,label,val)=>`<div><label class="f">${label}</label><input type="number" data-scope="${scope}" data-id="${id}" data-field="${field}" value="${esc(val)}"></div>`;
+  let h = `<div class="row">${f("mem_size","capacity (GiB)",m.mem_size)}${f("mem_bw","mem BW (GB/s)",m.mem_bw)}${f("mem_latency","mem lat (ns)",m.mem_latency)}</div>`;
+  if(withLink) h += `<div class="row">${f("link_bw","link BW (GB/s)",m.link_bw)}${f("link_latency","link lat (ns)",m.link_latency)}</div>`;
+  return h;
+}
+function renderPod(){
+  const z = $("podzone"); const p = state.pod;
+  if(!p.jbof && !p.coldstore){ z.innerHTML = `<div class="emptyzone">drop <b>JBOF</b> / <b>COLDSTORE</b> here for a pod-wide pooled tier</div>`; return; }
+  let h="";
+  if(p.jbof) h += `<div class="podtier"><div class="hd"><span class="pill tag-jbof">JBOF</span><span class="small">pod-wide pool (split across nodes)</span><span class="spacer" style="flex:1"></span>${presetSel("pod-jbof",JBOF_PRESETS)}<button class="remove" data-del="pod-jbof">✕</button></div>${memFields("pod-jbof","",p.jbof,true)}</div>`;
+  if(p.coldstore) h += `<div class="podtier"><div class="hd"><span class="pill tag-cold">COLDSTORE</span><span class="small">pod-wide pool</span><span class="spacer" style="flex:1"></span>${presetSel("pod-coldstore",COLD_PRESETS)}<button class="remove" data-del="pod-coldstore">✕</button></div>${memFields("pod-coldstore","",p.coldstore,true)}</div>`;
+  z.innerHTML = h;
+}
+function renderCanvas(){
+  const c = $("canvas");
+  if(!state.nodes.length){ c.innerHTML = `<div class="emptyzone">drop a <b>Node</b> here to begin (or click <b>+ Node</b>)</div>`; return; }
+  c.innerHTML = state.nodes.map((n,ni)=>{
+    let inner="";
+    // node CPU / FLASH
+    if(n.cpu) inner += `<div class="grp"><div class="gh">Node CPU pool <span class="badge">host DRAM</span> <button class="remove" data-del="nodecpu:${n.id}">✕</button> ${presetSel("nodecpu:"+n.id,CPU_PRESETS)}</div>${memFields("nodecpu:"+n.id,n.id,n.cpu,false)}</div>`;
+    if(n.flash) inner += `<div class="grp"><div class="gh"><span class="pill tag-flash">FLASH</span> node-local <button class="remove" data-del="nodeflash:${n.id}">✕</button> ${presetSel("nodeflash:"+n.id,FLASH_PRESETS)}</div>${memFields("nodeflash:"+n.id,n.id,n.flash,true)}</div>`;
+    // instances
+    inner += n.instances.map((i,ii)=>renderInst(n,i,ii)).join("");
+    if(!n.instances.length) inner += `<div class="emptyzone">drop an <b>Instance</b> here</div>`;
+    return `<div class="node drop" data-drop="node:${n.id}">
+      <div class="hd"><span class="pill tag-node">Node ${ni}</span>
+        <span class="small">${n.instances.length} instance(s)</span>
+        <span class="spacer" style="flex:1"></span>
+        <button class="mini" data-add="instance:${n.id}">+ Instance</button>
+        <button class="mini" data-add="flash:${n.id}">+ FLASH</button>
+        <button class="mini" data-add="nodecpu:${n.id}">+ CPU</button>
+        <button class="remove" data-del="node:${n.id}">✕ node</button></div>
+      ${inner}</div>`;
+  }).join("");
+}
+function renderInst(n,i,ii){
+  const a=i.adv;
+  const cpuBlock = i.cpu
+    ? `<div class="grp"><div class="gh"><span class="pill tag-cpu">CPU</span> per-instance <button class="remove" data-del="instcpu:${i.id}">✕</button></div>${memFields("instcpu:"+i.id,i.id,i.cpu,false)}</div>`
+    : `<button class="mini ghost" data-add="instcpu:${i.id}" style="margin-top:6px">+ per-instance CPU</button>`;
+  return `<div class="inst">
+    <div class="hd"><span class="pill tag-inst">Instance ${ii}</span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="remove" data-del="inst:${i.id}">✕</button></div>
+    <div class="row">
+      <div style="flex:2"><label class="f">model</label><select class="full" data-scope="inst" data-id="${i.id}" data-field="model">${modelOpts(i.model)}</select></div>
+      <div><label class="f">hardware</label><select class="full" data-scope="inst" data-id="${i.id}" data-field="hardware">${opts(HARDWARE.map(h=>h.name),i.hardware)}</select></div>
+      <div><label class="f">TP size</label><select class="full" data-scope="inst" data-id="${i.id}" data-field="tp_size">${opts([1,2,4,8].map(String),String(i.tp_size))}</select></div>
+    </div>
+    <div class="grp"><div class="gh"><span class="pill tag-npu">NPU</span> HBM per GPU ${presetSel("npu:"+i.id,NPU_PRESETS)}</div>${memFields("npu:"+i.id,i.id,i.npu,false)}</div>
+    ${cpuBlock}
+    <div class="calc" id="calc-${i.id}"></div>
+    <details class="adv"><summary>Advanced</summary>
+      <div class="row">
+        <div><label class="f">pd_type</label><select class="full" data-scope="inst" data-id="${i.id}" data-field="pd_type">${opts(["","prefill","decode"], i.pd_type||"")}</select></div>
+        <div><label class="f">ep_size (MoE)</label><input type="number" data-scope="adv" data-id="${i.id}" data-field="ep_size" value="${esc(a.ep_size)}"></div>
+        <div><label class="f">num_npus</label><input type="number" data-scope="adv" data-id="${i.id}" data-field="num_npus" value="${esc(a.num_npus)}"></div>
+      </div>
+      <div class="row">
+        <div><label class="f">pp_size</label><input type="number" data-scope="adv" data-id="${i.id}" data-field="pp_size" value="${esc(a.pp_size)}"></div>
+        <div style="flex:2"><label class="f">dp_group (label)</label><input type="text" data-scope="adv" data-id="${i.id}" data-field="dp_group" value="${esc(a.dp_group)}"></div>
+      </div>
+      <div class="grp"><div class="gh"><label style="color:var(--muted)"><input type="checkbox" data-scope="place" data-id="${i.id}" data-field="on" ${a.place.on?"checked":""}> weight / KV placement</label></div>
+        <div class="row">
+          <div><label class="f">weights</label><select class="full" data-scope="place" data-id="${i.id}" data-field="weights">${opts(["npu","cpu"],a.place.weights)}</select></div>
+          <div><label class="f">kv_loc</label><select class="full" data-scope="place" data-id="${i.id}" data-field="kv_loc">${opts(["npu","cpu"],a.place.kv_loc)}</select></div>
+          <div><label class="f">kv_evict_loc</label><select class="full" data-scope="place" data-id="${i.id}" data-field="kv_evict_loc">${opts(["npu","cpu"],a.place.kv_evict_loc)}</select></div>
+        </div>
+      </div>
+      <div class="grp"><div class="gh"><label style="color:var(--muted)"><input type="checkbox" data-scope="ovr" data-id="${i.id}" data-field="on" ${a.ovr.on?"checked":""}> per-instance runtime overrides</label></div>
+        <div class="row">
+          <div><label class="f">max_num_seqs</label><input type="number" data-scope="ovr" data-id="${i.id}" data-field="max_num_seqs" value="${esc(a.ovr.max_num_seqs)}"></div>
+          <div><label class="f">block_size</label><input type="number" data-scope="ovr" data-id="${i.id}" data-field="block_size" value="${esc(a.ovr.block_size)}"></div>
+          <div><label class="f">dtype</label><select class="full" data-scope="ovr" data-id="${i.id}" data-field="dtype">${opts(["","float16","bfloat16","float32","fp8","int8"],a.ovr.dtype)}</select></div>
+          <div><label class="f">kv_cache_dtype</label><select class="full" data-scope="ovr" data-id="${i.id}" data-field="kv_cache_dtype">${opts(["","auto","fp8"],a.ovr.kv_cache_dtype)}</select></div>
+        </div>
+      </div>
+    </details>
+  </div>`;
+}
+function render(){ renderPod(); renderCanvas(); emit(); }
+
+// --------------------------------------------------------- emit + validate ---
+function emit(){
+  const cfg = buildConfig();
+  $("jsonout").textContent = JSON.stringify(cfg, null, 2);
+  $("runcmd").textContent = runCommand();
+  // per-instance calc badges
+  for(const n of state.nodes) for(const i of n.instances){
+    const el = $("calc-"+i.id); if(!el) continue;
+    const c = instCalc(i);
+    if(c.unknown){ el.textContent="unknown model"; continue; }
+    const room = c.kvRoom;
+    const roomTxt = `<b style="color:${room< (c.block/2**30) ?'var(--bad)':'var(--txt)'}">${room.toFixed(2)} GiB</b>`;
+    el.innerHTML = `weight ≈ <b>${c.weightGpu.toFixed(2)} GiB/GPU</b> · KV/token ≈ <b>${fmtB(c.kvTok)}</b>/GPU · block(${c.bs}) ≈ <b>${fmtB(c.block)}</b> · NPU KV room ≈ ${roomTxt}`;
+  }
+  renderValidation(cfg);
+  try{ localStorage.setItem("llmss-cfgbuilder", JSON.stringify(state)); }catch(e){}
+}
+function V(level,msg){ return `<div class="v ${level}">${msg}</div>`; }
+function renderValidation(cfg){
+  const out=[]; const R=state.run;
+  if(!state.nodes.length) out.push(V("error","<b>No nodes.</b> Drag a Node onto the canvas."));
+  let ginst=0, anyDeep = !!(state.pod.jbof||state.pod.coldstore), anyFlash=false, unsimulatable=false, badtp=false;
+  state.nodes.forEach((n,ni)=>{
+    if(n.flash) anyFlash=true;
+    if(!n.instances.length) out.push(V("warn",`Node ${ni} has <b>no instances</b>.`));
+    // parser rule: a node must have a node-level CPU pool OR every instance must declare its own CPU
+    const nodeHasCpu = !!n.cpu || (n.instances.length>0 && n.instances.every(x=>!!x.cpu));
+    if(n.instances.length && !nodeHasCpu)
+      out.push(V("error",`Node ${ni}: <b>no CPU memory</b> — add a <b>Node CPU pool</b>, or give <b>every</b> instance a per-instance CPU (the parser requires cpu_mem on the node or on all instances).`));
+    n.instances.forEach((i,ii)=>{
+      ginst++;
+      const tag=`Node ${ni}/Inst ${ii}`;
+      const m=MODEL_BY[i.model];
+      if(!i.model||!i.hardware) out.push(V("error",`${tag}: model &amp; hardware are required.`));
+      if(m && !m.sim) unsimulatable=true;
+      const hw=HARDWARE.find(h=>h.name===i.hardware);
+      if(hw && !hw.profiled) out.push(V("warn",`${tag}: hardware <b>${esc(i.hardware)}</b> has no profiler data — only <b>RTXPRO6000</b> is simulatable.`));
+      if(![1,2].includes(num(i.tp_size)) ) badtp=true;
+      const av=i.adv||{};
+      if(av.ep_size!=="" && av.ep_size!=null && !av.dp_group && num(av.ep_size) > num(i.tp_size,1))
+        out.push(V("error",`${tag}: ep_size (${num(av.ep_size)}) &gt; tp_size (${num(i.tp_size,1)}) requires a <b>dp_group</b> label.`));
+      if(av.num_npus!=="" && av.num_npus!=null){ const pp=num(av.pp_size||1)||1; const need=num(i.tp_size,1)*pp;
+        if(num(av.num_npus)!==need) out.push(V("error",`${tag}: num_npus (${num(av.num_npus)}) must equal tp_size×pp_size (${need}).`)); }
+      const c=instCalc(i);
+      if(!c.unknown){
+        if(num(i.npu.mem_size) <= 0) out.push(V("error",`${tag}: NPU capacity must be &gt; 0.`));
+        else if(c.kvRoom <= 0) out.push(V("error",`${tag}: NPU HBM (${num(i.npu.mem_size)} GiB) &lt; model weight (${c.weightGpu.toFixed(2)} GiB/GPU) — weights don't fit.`));
+        else if(c.kvRoom*2**30 < c.block) out.push(V("error",`${tag}: NPU KV room (${c.kvRoom.toFixed(2)} GiB) &lt; one KV block (${fmtB(c.block)}) — no request can be admitted (would deadlock).`));
+        else if(c.kvRoom*2**30 < c.block*4) out.push(V("warn",`${tag}: very little NPU KV room (${c.kvRoom.toFixed(2)} GiB ≈ ${(c.kvRoom*2**30/c.block).toFixed(1)} blocks). Use <span class="kbd">--max-num-seqs 1</span> and short requests.`));
+      }
+      if(i.cpu && R.cpu_scope!=="per_instance") out.push(V("info",`${tag}: per-instance CPU is only used with <span class="kbd">--cpu-scope per_instance</span>.`));
+    });
+  });
+  if(badtp) out.push(V("warn","Some instances use TP∉{1,2}; the profiler only ships tp1/tp2 for the simulatable models."));
+  if(unsimulatable) out.push(V("warn","A selected model is <b>config-only</b> (no profiler perf data) — it will fail at trace generation until profiled."));
+  // tier / flag coherence
+  const depth={None:0,CPU:1,FLASH:2,JBOF:3,COLDSTORE:4};
+  const ps=R.prefix_storage;
+  if(depth[ps]>=2 && !R.enable_prefix_sharing) out.push(V("warn",`prefix-storage <b>${ps}</b> needs <span class="kbd">--enable-prefix-sharing</span> to reach deep tiers.`));
+  if(ps==="JBOF" && !state.pod.jbof) out.push(V("warn","prefix-storage <b>JBOF</b> but no JBOF tier declared — add a pod JBOF."));
+  if(ps==="COLDSTORE" && !state.pod.coldstore) out.push(V("warn","prefix-storage <b>COLDSTORE</b> but no COLDSTORE tier declared."));
+  if(ps==="FLASH" && !anyFlash) out.push(V("warn","prefix-storage <b>FLASH</b> but no node has a FLASH tier."));
+  if((state.pod.jbof||state.pod.coldstore) && depth[ps]<3) out.push(V("info","Pod tiers declared but <b>--prefix-storage</b> is shallower — deep tiers will stay empty this run."));
+  if(!R.enable_prefix_caching && ps!=="None") out.push(V("info","prefix-storage set but prefix caching is off."));
+  if(!out.length) out.push(V("ok",`<b>Looks runnable.</b> ${state.nodes.length} node(s), ${ginst} instance(s).`));
+  $("validation").innerHTML = out.join("");
+}
+function runCommand(){
+  const R=state.run; const f=`configs/cluster/${state.filename||"cluster"}.json`;
+  const L=[];
+  L.push(`python -m serving --cluster-config ${f}`);
+  L.push(`  --dtype ${R.dtype} --block-size ${R.block_size}`);
+  const flags=[];
+  if(R.enable_prefix_caching) flags.push("--enable-prefix-caching"); else flags.push("--no-enable-prefix-caching");
+  if(R.enable_prefix_sharing) flags.push("--enable-prefix-sharing");
+  L.push("  "+flags.join(" "));
+  if(R.prefix_storage && R.prefix_storage!=="None") L.push(`  --prefix-storage ${R.prefix_storage} --tier-policy ${R.tier_policy} --cpu-scope ${R.cpu_scope}`);
+  else L.push(`  --cpu-scope ${R.cpu_scope}`);
+  if(num(R.max_num_seqs)>0) L.push(`  --max-num-seqs ${num(R.max_num_seqs)}`);
+  let last=`  --dataset ${R.dataset} --output outputs/${state.filename||"cluster"}.csv`;
+  if(R.dashboard) last+=" --dashboard";
+  L.push(last);
+  return "docker exec servingsim_docker bash -lc \"cd /app/LLMServingSim && \\\n"+L.join(" \\\n")+"\"";
+}
+
+// ---------------------------------------------------------------- mutation ---
+function findInst(id){ for(const n of state.nodes){ const i=n.instances.find(x=>x.id===id); if(i) return {n,i}; } return {}; }
+function findNode(id){ return state.nodes.find(n=>n.id===id); }
+function addComp(comp, targetId){
+  if(comp==="node"){ state.nodes.push(newNode()); }
+  else if(comp==="instance"){ const n=findNode(targetId)||state.nodes[state.nodes.length-1]; if(n) n.instances.push(newInstance()); else { const nn=newNode(); nn.instances.push(newInstance()); state.nodes.push(nn); } }
+  else if(comp==="flash"){ const n=findNode(targetId); if(n && !n.flash) n.flash=tier(FLASH_PRESETS["NVMe (6 GiB node)"]); }
+  else if(comp==="nodecpu"){ const n=findNode(targetId); if(n && !n.cpu) n.cpu={mem_size:CPU_PRESETS["small (32)"][0],mem_bw:1200,mem_latency:120}; }
+  else if(comp==="instcpu"){ const {i}=findInst(targetId); if(i && !i.cpu) i.cpu={mem_size:8,mem_bw:1200,mem_latency:120}; }
+  else if(comp==="jbof"){ if(!state.pod.jbof) state.pod.jbof=tier(JBOF_PRESETS["small (512 GiB)"]); }
+  else if(comp==="coldstore"){ if(!state.pod.coldstore) state.pod.coldstore=tier(COLD_PRESETS["small (4096 GiB)"]); }
+  render();
+}
+function delComp(spec){
+  const [kind,id]=spec.split(":");
+  if(kind==="node") state.nodes=state.nodes.filter(n=>n.id!==id);
+  else if(kind==="inst"){ for(const n of state.nodes) n.instances=n.instances.filter(x=>x.id!==id); }
+  else if(kind==="instcpu"){ const {i}=findInst(id); if(i) i.cpu=null; }
+  else if(kind==="nodecpu"){ const n=findNode(id); if(n) n.cpu=null; }
+  else if(kind==="nodeflash"){ const n=findNode(id); if(n) n.flash=null; }
+  else if(kind==="pod-jbof") state.pod.jbof=null;
+  else if(kind==="pod-coldstore") state.pod.coldstore=null;
+  render();
+}
+function setField(el){
+  const s=(el.dataset.scope||"").split(":")[0], id=el.dataset.id, f=el.dataset.field;
+  let v = el.type==="checkbox" ? el.checked : el.value;
+  if(s==="top"){ state[f]=v; }
+  else if(s==="inst"){ const {i}=findInst(id); if(i){ i[f]=(f==="tp_size")?num(v,1):v; if(f==="pd_type") i.pd_type = v||null; } }
+  else if(s==="adv"){ const {i}=findInst(id); if(i) i.adv[f]=v; }
+  else if(s==="place"){ const {i}=findInst(id); if(i){ i.adv.place[f]=v; } }
+  else if(s==="ovr"){ const {i}=findInst(id); if(i){ i.adv.ovr[f]=v; } }
+  else if(s==="npu"){ const {i}=findInst(id); if(i) i.npu[f]=v; }
+  else if(s==="instcpu"){ const {i}=findInst(id); if(i&&i.cpu) i.cpu[f]=v; }
+  else if(s==="nodecpu"){ const n=findNode(id); if(n&&n.cpu) n.cpu[f]=v; }
+  else if(s==="nodeflash"){ const n=findNode(id); if(n&&n.flash) n.flash[f]=v; }
+  else if(s==="pod-jbof"){ if(state.pod.jbof) state.pod.jbof[f]=v; }
+  else if(s==="pod-coldstore"){ if(state.pod.coldstore) state.pod.coldstore[f]=v; }
+  else if(s==="run"){ state.run[f]=v; }
+  // place/ovr fields are always rendered; the 'on' checkbox only changes what instOut()
+  // emits, so a live emit() suffices (no render() — that would collapse the Advanced panel).
+  emit();
+}
+function applyPreset(el){
+  const kind=el.dataset.preset, key=el.value; if(!key) return;
+  const map = kind==="pod-jbof"?JBOF_PRESETS : kind==="pod-coldstore"?COLD_PRESETS :
+              kind.startsWith("nodecpu")?CPU_PRESETS : kind.startsWith("nodeflash")?FLASH_PRESETS :
+              kind.startsWith("npu")?NPU_PRESETS : null;
+  if(!map) return; const p=map[key]; const t=tier(p);
+  if(kind==="pod-jbof") state.pod.jbof=t;
+  else if(kind==="pod-coldstore") state.pod.coldstore=t;
+  else if(kind.startsWith("npu")){ const id=kind.split(":")[1]; const {i}=findInst(id); if(i) i.npu={mem_size:p[0],mem_bw:p[1],mem_latency:p[2],link_bw:0,link_latency:0}; }
+  else if(kind.startsWith("nodecpu")){ const id=kind.split(":")[1]; const n=findNode(id); if(n) n.cpu={mem_size:p[0],mem_bw:p[1],mem_latency:p[2]}; }
+  else if(kind.startsWith("nodeflash")){ const id=kind.split(":")[1]; const n=findNode(id); if(n) n.flash=t; }
+  render();
+}
+
+// -------------------------------------------------------------- run-settings ---
+// A compact run-settings bar injected into the fabric card (CLI flags).
+function runSettingsUI(){
+  const R=state.run;
+  const sel=(f,list)=>`<select data-scope="run" data-field="${f}">${opts(list,R[f])}</select>`;
+  return `<div class="grp"><div class="gh">Run settings <span class="small">(CLI flags — shown in the command, not the JSON)</span></div>
+    <div class="row">
+      <div><label class="f">dtype</label>${sel("dtype",["float16","bfloat16","float32","fp8","int8"])}</div>
+      <div><label class="f">block_size</label><input type="number" data-scope="run" data-field="block_size" value="${esc(R.block_size)}"></div>
+      <div><label class="f">prefix-storage</label>${sel("prefix_storage",["None","CPU","FLASH","JBOF","COLDSTORE"])}</div>
+      <div><label class="f">tier-policy</label>${sel("tier_policy",["inclusive","exclusive"])}</div>
+      <div><label class="f">cpu-scope</label>${sel("cpu_scope",["per_node","per_instance"])}</div>
+      <div><label class="f">max-num-seqs (0=default)</label><input type="number" data-scope="run" data-field="max_num_seqs" value="${esc(R.max_num_seqs)}"></div>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <div style="flex:2"><label class="f">dataset</label><input type="text" data-scope="run" data-field="dataset" value="${esc(R.dataset)}"></div>
+      <div><label class="f"><input type="checkbox" data-scope="run" data-field="enable_prefix_caching" ${R.enable_prefix_caching?"checked":""}> prefix-caching</label>
+           <label class="f"><input type="checkbox" data-scope="run" data-field="enable_prefix_sharing" ${R.enable_prefix_sharing?"checked":""}> prefix-sharing</label>
+           <label class="f"><input type="checkbox" data-scope="run" data-field="dashboard" ${R.dashboard?"checked":""}> --dashboard</label></div>
+    </div></div>`;
+}
+
+// --------------------------------------------------------------- save / dl ---
+function guardBuild(){ if(!state.nodes.length){ flash("add at least one node before saving",true); return false; } return true; }
+function downloadJSON(){
+  if(!guardBuild()) return;
+  const text=JSON.stringify(buildConfig(),null,2);
+  const blob=new Blob([text],{type:"application/json"});
+  const url=URL.createObjectURL(blob); const a=document.createElement("a");
+  a.href=url; a.download=(state.filename||"cluster")+".json";
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+  flash("downloaded "+a.download);
+}
+async function copyJSON(){ try{ await navigator.clipboard.writeText(JSON.stringify(buildConfig(),null,2)); flash("JSON copied"); }catch(e){ flash("copy failed",true); } }
+async function copyCmd(){ try{ await navigator.clipboard.writeText(runCommand()); flash("command copied"); }catch(e){ flash("copy failed",true); } }
+async function saveServer(){
+  if(!guardBuild()) return;
+  const obj=buildConfig(); obj._filename=(state.filename||"cluster")+".json";
+  try{
+    const r=await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
+    const j=await r.json();
+    flash(j.ok?("saved → "+j.path):("error: "+j.error), !j.ok);
+  }catch(e){ flash("save failed: "+e,true); }
+}
+let flashT;
+function flash(msg,bad){ const s=$("saveStatus"); s.textContent=msg; s.style.color=bad?"var(--bad)":"var(--accent)"; clearTimeout(flashT); flashT=setTimeout(()=>s.textContent="",4000); }
+
+// --------------------------------------------------------------- wiring -----
+function mountFabricExtras(){
+  // inject run-settings into the fabric card (first .card in center)
+  const fabric=document.querySelector(".center .card");
+  let box=$("runsettings");
+  if(!box){ box=document.createElement("div"); box.id="runsettings"; fabric.appendChild(box); }
+  box.innerHTML=runSettingsUI();
+  // top field values
+  $("fname").value=state.filename;
+  fabric.querySelector('[data-field="link_bw"]').value=state.link_bw;
+  fabric.querySelector('[data-field="link_latency"]').value=state.link_latency;
+}
+// palette drag
+$("palette").addEventListener("dragstart",e=>{ const it=e.target.closest("[data-comp]"); if(it) e.dataTransfer.setData("comp",it.dataset.comp); });
+// drop zones (delegated on document, uses data-drop)
+document.addEventListener("dragover",e=>{ const z=e.target.closest("[data-drop]"); if(z){ e.preventDefault(); z.classList.add("over"); } });
+document.addEventListener("dragleave",e=>{ const z=e.target.closest("[data-drop]"); if(z) z.classList.remove("over"); });
+document.addEventListener("drop",e=>{
+  const z=e.target.closest("[data-drop]"); if(!z) return; e.preventDefault(); z.classList.remove("over");
+  const comp=e.dataTransfer.getData("comp"); if(!comp) return;
+  const zone=z.dataset.drop;
+  if(zone==="canvas"){ if(comp==="node") addComp("node"); else if(comp==="instance"){ if(!state.nodes.length) addComp("node"); addComp("instance", state.nodes[state.nodes.length-1]?.id); } else flash("drop "+comp+" on its target",true); }
+  else if(zone==="pod"){ if(comp==="jbof"||comp==="coldstore") addComp(comp); else flash("pod tiers accept JBOF/COLDSTORE",true); }
+  else if(zone.startsWith("node:")){ const id=zone.split(":")[1];
+    if(comp==="instance") addComp("instance",id);
+    else if(comp==="flash") addComp("flash",id);
+    else if(comp==="nodecpu") addComp("nodecpu",id);
+    else flash(comp+" can't drop on a node",true); }
+});
+// clicks: add / delete / preset are handled below via change+click delegation
+document.addEventListener("click",e=>{
+  const add=e.target.closest("[data-add]"); if(add){ const [c,id]=add.dataset.add.split(":"); addComp(c,id); return; }
+  const del=e.target.closest("[data-del]"); if(del){ delComp(del.dataset.del); return; }
+});
+document.addEventListener("input",e=>{ if(e.target.matches("[data-scope]")) setField(e.target); });
+document.addEventListener("change",e=>{
+  if(e.target.matches(".presetSel")){ applyPreset(e.target); return; }
+  if(e.target.matches("[data-scope]")) setField(e.target);
+});
+$("dlBtn").onclick=downloadJSON; $("copyBtn").onclick=copyJSON; $("copyCmd").onclick=copyCmd; $("saveBtn").onclick=saveServer;
+document.querySelectorAll("[data-tpl]").forEach(b=>b.onclick=()=>{ ({blank:tplBlank,qwen:tplQwen,vr:tplVR})[b.dataset.tpl](); boot(); });
+// theme
+function applyTheme(t){ document.body.classList.toggle("light",t==="light"); $("themeBtn").textContent=(t==="light"?"☀ theme":"🌙 theme"); }
+let theme="dark"; try{ theme=localStorage.getItem("llmss-theme")||"dark"; }catch(e){} applyTheme(theme);
+$("themeBtn").onclick=()=>{ theme=(theme==="light"?"dark":"light"); try{ localStorage.setItem("llmss-theme",theme); }catch(e){} applyTheme(theme); };
+// served-mode → reveal Save-to-disk
+if(location.protocol!=="file:") $("saveBtn").style.display="";
+
+function boot(){ mountFabricExtras(); render(); }
+// init: restore or blank
+try{ const saved=localStorage.getItem("llmss-cfgbuilder");
+  if(saved){ state=JSON.parse(saved); let mx=0;
+    for(const n of state.nodes||[]){ mx=Math.max(mx, +String(n.id).slice(1)||0);
+      for(const i of n.instances||[]) mx=Math.max(mx, +String(i.id).slice(1)||0); }
+    uid=Math.max(uid, mx); } }catch(e){}
+if(!state) tplQwen();
+boot();
+</script>
+</body>
+</html>
