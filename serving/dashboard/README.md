@@ -75,6 +75,12 @@ Point at a non-default snapshot via the sidebar or `LLMSS_DASHBOARD_FILE`.
   instances · GPUs · TP), `--tier-policy` / `--cpu-scope` / `--prefix-storage`,
   sim clock, wall time, progress (finished / total requests). Controls for the
   **refresh rate** (0.5 s … 10 s) and a **light/dark** toggle.
+- **⚡ Average throughput card** — the **static** number to compare between runs:
+  **total tok/s** (headline), decode (gen) tok/s, prompt (prefill) tok/s, req/s, plus
+  **active tok/s** (average over intervals that produced tokens — idle-robust) and
+  **peak tok/s**. `total_*` divide by the full sim time (makespan), so an idle gap
+  dilutes them; `active` reflects the true serving rate for bursty/gapped workloads.
+  (Same numbers print in the console `Throughput Results` block.)
 - **Tier specs panel** (collapsible) — per tier: scope, mem bw/latency, and (for
   the deep tiers) the BlueField link bw/latency.
 - **Tiles** — requests finished/running/waiting; prompt / decode / total tokens;

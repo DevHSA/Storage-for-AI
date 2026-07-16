@@ -1318,6 +1318,16 @@ def main():
     print_markup(f"Average prompt throughput (tok/s):                                  {total_prompt/total_latency:.2f}")
     print_markup(f"Average generation throughput (tok/s):                              {total_gen/total_latency:.2f}")
     print_markup(f"Total token throughput (tok/s):                                     {(total_prompt + total_gen)/total_latency:.2f}")
+    # Peak + idle-robust "active" throughput from the per-interval series. The
+    # averages above divide by the FULL makespan (diluted by idle gaps); the
+    # active figure averages only the intervals that produced tokens, so it
+    # reflects the true serving rate for bursty / gapped workloads.
+    _tot_series = [p + g for (p, g) in throughput]
+    _active = [x for x in _tot_series if x > 0]
+    _peak_total = max(_tot_series) if _tot_series else 0.0
+    _active_total = (sum(_active) / len(_active)) if _active else 0.0
+    print_markup(f"Peak total throughput (tok/s):                                      {_peak_total:.2f}")
+    print_markup(f"Active total throughput (tok/s, excludes idle intervals):           {_active_total:.2f}")
     print_markup(f"Throughput per {1/RATIO} sec (\\[prompt_throughput], \\[gen_throughput]): {throughput}")
     print_rule()
     if any_prefix_caching:

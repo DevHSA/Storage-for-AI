@@ -1138,6 +1138,7 @@ python -m serving --cluster-config configs/cluster/pod_prop_mini_2rack_nojbof.js
     <tr><td>E2E latency</td><td>arrival → last token</td><td>overall SLO</td></tr>
     <tr><td>Reload(ms)</td><td>uncontended cost of serving hits below NPU</td><td>per-tier speed (JBOF ≪ COLDSTORE)</td></tr>
     <tr><td>Hit % / tier</td><td>share of reused tokens per tier</td><td>where the working set landed</td></tr>
+    <tr><td>Throughput (tok/s)</td><td><b>total tokens ÷ sim time</b> — the static average to compare runs (also decode / prompt / req-per-s, plus <em>active</em> = idle-robust busy-interval average, and <em>peak</em>)</td><td>higher = the same work finished sooner; use a saturated workload so idle gaps don't dilute the makespan average</td></tr>
   </table>
 
   <hr>

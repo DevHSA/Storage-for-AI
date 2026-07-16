@@ -57,6 +57,14 @@
   .tile .lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
   .tile .val{font-size:26px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
   .tile .delta{color:var(--muted);font-size:12px;margin-top:2px}
+  #avgthru{margin-top:12px;border:1px solid var(--accent);border-radius:10px;background:var(--panel);padding:12px 14px}
+  #avgthru h2{margin:0 0 8px}
+  .thrurow{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+  .bigmetric{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;text-align:center}
+  .bigmetric.hero{border-color:var(--accent)}
+  .bignum{font-size:28px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
+  .bigmetric.hero .bignum{color:var(--accent)}
+  .biglbl{font-size:11px;color:var(--muted);margin-top:3px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
   @media(max-width:1000px){.grid2{grid-template-columns:1fr}}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
@@ -102,6 +110,8 @@
   <details class="specs" open><summary>🧩 KV-cache unit — bytes per token &amp; smallest KV block</summary><div id="kvunit"></div></details>
   <div class="progress"><div id="progbar" style="width:0%"></div></div>
   <div id="progtext" class="sub" style="margin-top:6px"></div>
+
+  <div id="avgthru"></div>
 
   <div id="tiles" class="tiles"></div>
 
@@ -308,6 +318,26 @@ async function poll(){
   const peakPr=hist.length?Math.max(0,...hist.map(p=>+p.prompt_tps||0)):0;
   const liveDec=(thr.live_decode_tok_per_s||0)||(lastPt?+lastPt.decode_tps:0)||0;
   const livePr=(thr.live_prompt_tok_per_s||0)||(lastPt?+lastPt.prompt_tps:0)||0;
+
+  // ---- Average throughput (the static number to compare between runs) ---- //
+  const totSeries=hist.map(p=>(+p.prompt_tps||0)+(+p.decode_tps||0));
+  const activeSeries=totSeries.filter(x=>x>0);
+  const peakTot=(thr.peak_total_tok_per_s!=null)?+thr.peak_total_tok_per_s:(totSeries.length?Math.max(0,...totSeries):0);
+  const activeTot=(thr.active_total_tok_per_s!=null)?+thr.active_total_tok_per_s
+                  :(activeSeries.length?activeSeries.reduce((a,b)=>a+b,0)/activeSeries.length:0);
+  const metric=(v,l,hero)=>`<div class="bigmetric${hero?' hero':''}"><div class="bignum">${v}</div><div class="biglbl">${l}</div></div>`;
+  $("avgthru").innerHTML=
+    `<h2>⚡ Average throughput <span class="sub" style="font-weight:400;text-transform:none;letter-spacing:0">— whole-run static metric to compare between runs (total tokens ÷ sim time)</span></h2>`+
+    `<div class="thrurow">`+
+      metric((thr.total_tok_per_s||0).toFixed(1),"total tok/s",true)+
+      metric((thr.decode_tok_per_s||0).toFixed(1),"decode (gen) tok/s")+
+      metric((thr.prompt_tok_per_s||0).toFixed(1),"prompt (prefill) tok/s")+
+      metric((thr.req_per_s||0).toFixed(2),"requests/s")+
+      metric(activeTot.toFixed(1),"active tok/s (excl. idle)")+
+      metric(peakTot.toFixed(1),"peak tok/s")+
+    `</div>`+
+    `<div class="sub" style="font-size:11px;margin-top:6px">over ${(sim.sim_seconds||0).toFixed(2)} s sim · ${fi(done)}/${fi(tot)} requests finished. `+
+    `<b>total</b> = end-to-end average (÷ full sim time, diluted by idle gaps); <b>active</b> = average over intervals that produced tokens (idle-robust); <b>peak</b> = best interval.</div>`;
 
   $("tiles").innerHTML=[
     tile("Requests done", fi(done), `${fi(ct.requests_running)} running · ${fi(ct.requests_waiting)} waiting`),

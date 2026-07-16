@@ -333,6 +333,15 @@ python -m serving --cluster-config configs/cluster/guide_8b_tiering.json \
   <div class="win"><b>What to look for:</b> the "KV spill memory over sim time" chart fills the deep tiers;
   the "Reload latency per tier" bars show JBOF short and COLDSTORE long; the by-tray drill-down shows 4 GPUs +
   2 CPUs per tray. Lower <code>--log-interval</code> → denser curves (must be &lt; total sim time).</div>
+  <div class="box note"><div class="t">⚡ Average throughput — the static number to compare</div>
+  The over-time chart shows the <em>shape</em>; to <b>compare two runs</b> use the <b>⚡ Average throughput</b>
+  card (and the console <code>Throughput Results</code> block). The headline is <b>total token throughput =
+  (prompt + decode tokens) ÷ sim time</b> (with decode / prompt / req-per-s splits) — for the same workload it
+  is monotonic in makespan, so it directly ranks configs (JBOF finishes sooner → higher tok/s). Because it
+  divides by the <em>full</em> sim time it is diluted by idle gaps, so the card also shows <b>active tok/s</b>
+  (averaged only over intervals that produced tokens — idle-robust) and <b>peak tok/s</b>. Use a <b>saturated
+  workload</b> (all requests at once, e.g. the §4a fill trace) for the cleanest throughput comparison; on the
+  gapped cross-rack demo (§4g) total is diluted (e.g. ~4.9k tok/s) while active shows the real rate (~16k tok/s).</div>
   <div class="box note"><div class="t">🧩 KV-cache unit card</div>
   Every run (dashboard or not) reports the <b>KV-cache granularity</b> for the loaded model/config: KV bytes
   <b>per token</b> (per GPU, and full-context = ×tp_size for the deep tiers) and the <b>smallest KV unit</b> —

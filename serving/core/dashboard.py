@@ -330,11 +330,21 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
             "mem": {t["name"]: t["total_used_bytes"] for t in tiers},
             "ttft": latency["ttft"]["mean"], "tbt": latency["tbt"]["mean"],
         })
+    # peak + idle-robust "active" (busy-interval) throughput from the timeline.
+    # total_*_tok_per_s divide by the FULL sim time (makespan) -> the standard
+    # average, but diluted by idle gaps. active_* averages only the intervals
+    # that actually produced tokens, so it reflects the true serving rate even
+    # for bursty / gapped workloads. peak_* is the best single interval.
+    _tot_series = [(float(p.get("prompt_tps", 0) or 0) + float(p.get("decode_tps", 0) or 0))
+                   for p in (history or [])]
+    _active = [x for x in _tot_series if x > 0]
     thr = {
         "req_per_s": (req_cnt / sim_seconds) if sim_seconds else 0.0,
         "prompt_tok_per_s": (total_prompt / sim_seconds) if sim_seconds else 0.0,
         "decode_tok_per_s": (total_gen / sim_seconds) if sim_seconds else 0.0,
         "total_tok_per_s": ((total_prompt + total_gen) / sim_seconds) if sim_seconds else 0.0,
+        "peak_total_tok_per_s": (max(_tot_series) if _tot_series else 0.0),
+        "active_total_tok_per_s": ((sum(_active) / len(_active)) if _active else 0.0),
         "live_prompt_tok_per_s": live_prompt_tps, "live_decode_tok_per_s": live_gen_tps,
         "history": list(history or []),
     }
