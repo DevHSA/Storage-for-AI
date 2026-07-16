@@ -87,6 +87,7 @@
   <a href="#ex-seqs" class="sub">4d. --max-num-seqs</a>
   <a href="#ex-dash" class="sub">4e. --dashboard / --log-interval</a>
   <a href="#ex-session" class="sub">4f. --session-metrics (decode)</a>
+  <a href="#ex-crossrack" class="sub">4g. cross-rack JBOF reuse</a>
   <a href="#showcase">5. Realistic sharegpt showcase</a>
   <a href="#sizing">6. Sizing rules (avoid crashes)</a>
 </nav>
@@ -223,6 +224,7 @@
     <tr><td class="num">--dashboard-file PATH</td><td>Where the live JSON is written (default <code>outputs/dashboard/live.json</code>).</td></tr>
     <tr><td class="num">--log-interval SEC</td><td>How often (sim seconds) to log a throughput sample / dashboard point (default 1.0). Lower = denser charts; must be &lt; total sim time or the charts show "collecting samples". §4e.</td></tr>
     <tr><td class="num">--session-metrics</td><td>For multi-turn / agentic-session workloads (records with <code>sub_requests</code>): split TTFT into first-turn (cold) vs resumed-turn (warm, context reloaded). Exposes the pause/resume "context-parking" JBOF benefit. §4f.</td></tr>
+    <tr><td class="num">--request-routing-policy</td><td><code>LOAD</code> (default) / <code>RR</code> / <code>RAND</code> / <code>CUSTOM</code>. Under <code>CUSTOM</code>, a request's optional <code>target_instance</code> field pins it to a specific instance — used to place a producer on one tray and the reuser on another for the cross-rack JBOF demo. §4g.</td></tr>
     <tr><td class="num">--dtype / --block-size / --dataset / --output</td><td>Precision (<code>float16</code>), KV block size (16), the workload JSONL, and the per-request CSV.</td></tr>
   </table>
 
@@ -471,6 +473,44 @@ TTFT resumed-turn       762.55    ...                                       </pr
   and the resume overhead. The card shows only when the workload carries sessions, so it stays hidden for flat
   traces. (Works with the base <code>qwen3_32b_2node_1tray_cascade_largewl.json</code> config too — just append
   <code>--dashboard</code>.)</div>
+
+  <!-- ============================================================ -->
+  <h3 id="ex-crossrack">4g. Cross-rack context reuse via a shared JBOF (exclusive)</h3>
+  <p>The pod-wide JBOF is a <b>single shared pool</b>: a context computed on one tray, once evicted down to
+  JBOF, is reusable by <b>any other tray</b>. Under <code>--tier-policy exclusive</code> a tray's finished
+  context cascades <code>NPU&rarr;CPU&rarr;JBOF</code>; a request on a <em>different</em> tray that shares that
+  prefix then reloads it from JBOF instead of recomputing — so <b>tray B's TTFT drops thanks to work tray A
+  did</b>. Without JBOF the same reuse falls to the slow COLDSTORE (or is recomputed).</p>
+  <div class="box note"><div class="t">New: pinning producer vs consumer with <code>--request-routing-policy CUSTOM</code></div>
+  To make the demo deterministic, requests carry an optional <code>target_instance</code> field, honored only
+  under <code>--request-routing-policy CUSTOM</code>. The workload pins the <b>producers to tray 0</b> and the
+  <b>reusers to tray 1</b> so the reuse is provably cross-tray. (Other policies — LOAD/RR/RAND — are
+  unchanged.) The generator <code>workloads/generators/make_cross_rack.py</code> emits these fields.</div>
+  <pre class="code"><span class="cm"># one-shot: generate workload + run WITH and WITHOUT JBOF + print the phase-2 TTFT drop</span>
+bash run_cross_rack_demo.sh 16 2048
+
+<span class="cm"># or the two runs explicitly (same workload, exclusive, CUSTOM routing):</span>
+python3 workloads/generators/make_cross_rack.py workloads/cross_rack_demo.jsonl 16 2048 8 4 4 8000
+python -m serving --cluster-config configs/cluster/cross_rack_jbof.json \
+  --dtype float16 --block-size 16 --enable-prefix-caching --enable-prefix-sharing \
+  --prefix-storage JBOF --tier-policy exclusive --cpu-scope per_node \
+  <span class="j">--request-routing-policy CUSTOM</span> --max-num-seqs 1 \
+  --dataset workloads/cross_rack_demo.jsonl --output outputs/cross_rack_jbof.csv
+<span class="cm"># WITHOUT JBOF: config cross_rack_nojbof.json + --prefix-storage COLDSTORE</span></pre>
+  <p>How it works: tray 0 computes N distinct contexts (they cascade into JBOF); after a gap, tray 1 reuses
+  each one. Tray 1 never computed them and can't see tray 0's per-node NPU/CPU, so every hit is a
+  <b>cross-rack</b> hit on the pooled tier.</p>
+  <table>
+    <tr><th>Metric (tray-1 reuse of tray-0 context)</th><th>WITH JBOF</th><th>WITHOUT JBOF (COLDSTORE)</th></tr>
+    <tr><td>Deep-tier hit tokens (cross-rack)</td><td>16384 on <b>JBOF</b></td><td>16384 on <b>COLDSTORE</b></td></tr>
+    <tr><td>Total reload latency</td><td><b>55.7 ms</b></td><td>687.3 ms&nbsp; (~12&times;)</td></tr>
+    <tr><td>First reuse TTFT (queue-free)</td><td><b>19.1 ms</b></td><td>98.1 ms&nbsp; (~5&times;)</td></tr>
+    <tr><td>Mean phase-2 (reuse) TTFT</td><td><b>204.9 ms</b></td><td>560.1 ms&nbsp; (2.7&times;)</td></tr>
+    <tr><td>Phase-1 produce TTFT (control)</td><td>732.2 ms</td><td>732.2 ms (identical)</td></tr>
+  </table>
+  <div class="win"><b>Proof:</b> the reuse hits land on <b>JBOF</b> (NPU/CPU hits = 0, since tray 1 never held
+  the context), and tray 1's TTFT is 2.7&times; lower (5&times; on the first, queue-free reuse). Verified at
+  8 contexts; scale with <code>run_cross_rack_demo.sh &lt;N_CTX&gt; &lt;CTX_LEN&gt;</code>.</div>
 
   <!-- ============================================================ -->
   <h2 id="showcase">5. Realistic sharegpt showcase</h2>

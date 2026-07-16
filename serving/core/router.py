@@ -94,7 +94,10 @@ class Router:
         return best_idx
 
     def _custom_select(self, schedulers, role):
-        raise NotImplementedError("Implement custom routing policy.")
+        # CUSTOM honors a per-request 'target_instance' field, applied at prefill
+        # routing time in route_arrived_requests(). This fallback covers a request
+        # with no target (and the decode path): behave like round-robin.
+        return self._rr_select(schedulers, role)
 
     # -----------------------------------------------------------------------
     # Request loading and real-time routing
@@ -149,6 +152,9 @@ class Router:
         if enable_prefix_caching:
             req_data['input_hash_ids'] = row.get('input_tok_ids', [])
             req_data['output_hash_ids'] = row.get('output_tok_ids', [])
+        # Optional pinned placement, honored only under --request-routing-policy CUSTOM.
+        if 'target_instance' in row:
+            req_data['target_instance'] = int(row['target_instance'])
         self._pending_requests.append(req_data)
 
     def _load_agentic_session(self, row, enable_prefix_caching):
@@ -198,7 +204,10 @@ class Router:
             if req_data['arrival_time_ns'] > current_time_ns:
                 break
 
-            instance_id = self._select_instance(self.prefill_schedulers, "prefill")
+            if self.routing_policy == "CUSTOM" and req_data.get('target_instance') is not None:
+                instance_id = int(req_data['target_instance']) % len(self.prefill_schedulers)
+            else:
+                instance_id = self._select_instance(self.prefill_schedulers, "prefill")
             sched = self.prefill_schedulers[instance_id]
 
             _sid = req_data.get('session_id')

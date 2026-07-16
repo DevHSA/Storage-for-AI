@@ -1,0 +1,25 @@
+{
+    "_comment": "Cross-rack reuse demo (WITHOUT JBOF) — identical to cross_rack_jbof.json but NO pod-wide JBOF tier, so tray-0 contexts cascade NPU->CPU->COLDSTORE. Tray 1 still reuses them cross-rack, but reloads from the slow COLDSTORE instead of JBOF -> higher TTFT. Run: --tier-policy exclusive --prefix-storage COLDSTORE --request-routing-policy CUSTOM --cpu-scope per_node --max-num-seqs 1 --enable-prefix-caching --enable-prefix-sharing",
+    "num_nodes": 2,
+    "link_bw": 100,
+    "link_latency": 2000,
+    "coldstore_mem": { "mem_size": 128, "mem_bw": 4,  "mem_latency": 2000000, "link_bw": 16,  "link_latency": 20000 },
+    "nodes": [
+        {
+            "num_instances": 1,
+            "instances": [
+                { "model_name": "meta-llama/Llama-3.1-8B", "hardware": "RTXPRO6000",
+                  "npu_mem": { "mem_size": 15.3, "mem_bw": 22000, "mem_latency": 10 },
+                  "cpu_mem": { "mem_size": 0.3, "mem_bw": 1200, "mem_latency": 120 }, "pd_type": null, "tp_size": 1 }
+            ]
+        },
+        {
+            "num_instances": 1,
+            "instances": [
+                { "model_name": "meta-llama/Llama-3.1-8B", "hardware": "RTXPRO6000",
+                  "npu_mem": { "mem_size": 15.3, "mem_bw": 22000, "mem_latency": 10 },
+                  "cpu_mem": { "mem_size": 0.3, "mem_bw": 1200, "mem_latency": 120 }, "pd_type": null, "tp_size": 1 }
+            ]
+        }
+    ]
+}
