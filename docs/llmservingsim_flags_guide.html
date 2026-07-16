@@ -343,8 +343,9 @@ python -m serving --cluster-config configs/cluster/guide_8b_tiering.json \
   <div class="box note"><div class="t">🧱 Build a config without hand-editing JSON</div>
   The dashboard server also hosts a <b>drag-and-drop cluster-config builder</b> at
   <code>http://localhost:8000/config</code> (or open <code>serving/dashboard/config_builder.html</code>
-  directly — it is fully offline). Drag <b>Node / Instance / JBOF / COLDSTORE / FLASH</b> components onto a
-  canvas, set each one's capacity / BW / latency inline (with Vera-Rubin presets), and it emits a valid
+  directly — it is fully offline). <b>Click or drag</b> <b>Node / Instance / JBOF / COLDSTORE / FLASH</b>
+  components (a sticky <b>live topology diagram</b> shows them as boxes + connection lines as you add), set
+  each one's capacity / BW / latency inline (with Vera-Rubin presets), and it emits a valid
   <code>configs/cluster/*.json</code> plus the matching run command. It <b>validates live</b> against the real
   rules (weights must fit the NPU, KV room ≥ one block, node needs a CPU, TP∈{1,2} is profiled, prefix-storage
   vs declared tiers) and computes each instance's weight and KV-per-token on the fly. <b>Download</b> the JSON,

@@ -47,9 +47,11 @@ A **drag-and-drop GUI** for authoring `configs/cluster/*.json` — no hand-editi
 With `serve.py` running, open **http://localhost:8000/config**; it also works
 fully offline by opening `serving/dashboard/config_builder.html` directly.
 
-- Drag **Node / Instance / JBOF / COLDSTORE / FLASH / CPU** from the palette onto
-  the canvas; set each component's capacity / BW / latency inline. Vera-Rubin and
-  scaled presets are one click; templates seed a Qwen 2×2 or a Vera-Rubin tray.
+- **Click** a palette component to add it (no scrolling), or **drag** it onto the
+  sticky **live topology diagram** (boxes + connection lines that redraw as you
+  build) / a node; the page auto-scrolls while dragging near an edge. Set each
+  component's capacity / BW / latency inline. Vera-Rubin and scaled presets are one
+  click; templates seed a Qwen 2×2 or a Vera-Rubin tray.
 - **Live validation** against the real parser rules (weights must fit the NPU, KV
   room ≥ one block, a node needs a CPU pool or per-instance CPU on all instances,
   TP∈{1,2} is profiled, prefix-storage vs declared tiers) plus a live

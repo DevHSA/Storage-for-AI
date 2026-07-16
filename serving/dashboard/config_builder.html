@@ -87,12 +87,36 @@ pre.cmd{background:var(--codebg);color:var(--txt);border:1px solid var(--line);b
 .remove{color:var(--bad);border-color:transparent;background:transparent;font-weight:700}
 select.full{width:100%}
 .badge{font-size:10px;padding:1px 6px;border-radius:5px;border:1px solid var(--line);color:var(--muted)}
+/* topology diagram (live boxes + connections) */
+.topo .th{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.topo .th h2{margin:0;flex:1}
+.diagWrap{overflow:auto;max-height:240px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.topo.collapsed .diagWrap{display:none}
+.diag{position:relative;padding:14px 14px 6px;min-width:max-content}
+.diagSvg{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+.dLink{fill:none;stroke:var(--jbof);stroke-width:2;opacity:.55}
+.dLink.c{stroke:var(--cold)}
+.dNodes{display:flex;gap:22px;align-items:flex-start;position:relative;z-index:1}
+.dNode{border:1px solid var(--accent2);border-radius:9px;padding:8px;background:var(--panel);min-width:148px}
+.dNodeHd{font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
+.dInst{border:1px solid var(--line);border-radius:7px;padding:6px;margin-bottom:6px;background:var(--panel2)}
+.dLbl{font-size:11px;margin-bottom:5px;white-space:nowrap;display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.dGpus{display:flex;gap:4px;flex-wrap:wrap}
+.dGpu{font-size:9px;font-weight:700;color:#03210c;background:var(--npu);border-radius:4px;padding:2px 5px}
+.dChip{font-size:9px;font-weight:700;border-radius:4px;padding:2px 5px}
+.dChip.cpu{background:var(--cpu);color:#04121f}.dChip.flash{background:var(--flash);color:#1f1400}
+.dNodeTiers{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
+.dMore{font-size:9px;color:var(--muted);align-self:center}
+.dPod{margin-top:40px;display:flex;flex-direction:column;gap:10px;position:relative;z-index:1}
+.dTier{border-radius:7px;padding:7px 10px;font-size:11px;font-weight:700;text-align:center}
+.dTier.jbof{background:var(--jbof);color:#160a24}.dTier.cold{background:var(--cold);color:#0b0f14}
+.dEmpty{font-size:10px;color:var(--muted);font-style:italic}
 </style>
 </head>
 <body>
 <header>
   <h1>🧱 LLMServingSim · Cluster Config Builder</h1>
-  <span class="sub">drag components → set capacities → download a runnable <code>configs/cluster/*.json</code></span>
+  <span class="sub">click or drag components → set capacities → download a runnable <code>configs/cluster/*.json</code></span>
   <span class="spacer"></span>
   <span id="saveStatus" class="small"></span>
   <button class="mini ghost" id="themeBtn">🌙 theme</button>
@@ -103,7 +127,7 @@ select.full{width:100%}
   <div class="left">
     <div class="card sticky">
       <h2>Components</h2>
-      <div class="hint">Drag onto the canvas. Or click <span class="kbd">+</span> on a target.</div>
+      <div class="hint"><b>Click to add</b> (no scrolling needed), or drag onto the <b>Topology</b> panel / a node. The page auto-scrolls while you drag near an edge.</div>
       <div id="palette">
         <div class="palette-item" draggable="true" data-comp="node">
           <span class="dot" style="background:var(--accent2)"></span>
@@ -142,7 +166,15 @@ select.full{width:100%}
 
   <!-- ================= CANVAS ================= -->
   <div class="center">
-    <div class="card">
+    <div class="card sticky topo" id="topoCard">
+      <div class="th">
+        <h2>Topology <span class="small" style="font-weight:400;text-transform:none;letter-spacing:0">— live view · click/drop components here too</span></h2>
+        <button class="mini ghost" id="topoToggle">collapse</button>
+      </div>
+      <div class="diagWrap drop" data-drop="diagram" id="diagram"></div>
+    </div>
+
+    <div class="card" id="fabricCard">
       <h2>Cluster fabric (root)</h2>
       <div class="row">
         <div>
@@ -444,7 +476,50 @@ function renderInst(n,i,ii){
     </details>
   </div>`;
 }
-function render(){ renderPod(); renderCanvas(); emit(); }
+function render(){ renderPod(); renderCanvas(); renderDiagram(); emit(); }
+
+// ------------------------------------------------------ live topology diagram ---
+function renderDiagram(){
+  const host=$("diagram"); if(!host) return;
+  if(!state.nodes.length && !state.pod.jbof && !state.pod.coldstore){
+    host.innerHTML=`<div class="emptyzone" style="padding:24px">Click or drop a <b>Node</b>, then an <b>Instance</b> — the topology draws here as you build (boxes = components, lines = the shared tier chain).</div>`;
+    return;
+  }
+  const nodesHtml = state.nodes.map((n,ni)=>{
+    const insts = n.instances.map((i,ii)=>{
+      const tp=num(i.tp_size,1)||1;
+      const short=(i.model||"?").split("/").pop();
+      const shown=Math.min(tp,8);
+      const gpus=Array.from({length:shown},()=>`<span class="dGpu" title="NPU ${num(i.npu.mem_size)} GiB">NPU</span>`).join("")+(tp>shown?`<span class="dMore">+${tp-shown}</span>`:"");
+      const cpuChip=i.cpu?`<span class="dChip cpu" title="per-instance CPU">CPU ${num(i.cpu.mem_size)}G</span>`:"";
+      return `<div class="dInst"><div class="dLbl"><b>${esc(short)}</b> · TP${tp}${cpuChip}</div><div class="dGpus">${gpus}</div></div>`;
+    }).join("") || `<div class="dEmpty">no instances yet</div>`;
+    const tiers=(n.cpu?`<span class="dChip cpu">CPU ${num(n.cpu.mem_size)}G</span>`:"")+(n.flash?`<span class="dChip flash">FLASH ${num(n.flash.mem_size)}G</span>`:"");
+    return `<div class="dNode"><div class="dNodeHd">Node ${ni}</div>${insts}${tiers?`<div class="dNodeTiers">${tiers}</div>`:""}</div>`;
+  }).join("");
+  const pod=(state.pod.jbof?`<div class="dTier jbof">JBOF · ${num(state.pod.jbof.mem_size)} GiB · pod-wide pool</div>`:"")
+          +(state.pod.coldstore?`<div class="dTier cold">COLDSTORE · ${num(state.pod.coldstore.mem_size)} GiB · pod-wide pool</div>`:"");
+  host.innerHTML=`<div class="diag"><div class="dNodes">${nodesHtml||'<div class="dEmpty">no nodes</div>'}</div>${pod?`<div class="dPod">${pod}</div>`:""}<svg class="diagSvg"></svg></div>`;
+  drawConnectors();
+}
+function drawConnectors(){
+  const host=$("diagram"); if(!host) return;
+  const diag=host.querySelector(".diag"); if(!diag) return;
+  const svg=diag.querySelector(".diagSvg"); if(!svg) return;
+  const W=diag.scrollWidth, H=diag.scrollHeight;
+  if(!W||!H){ svg.innerHTML=""; return; }              // collapsed / hidden → nothing to draw
+  svg.setAttribute("width",W); svg.setAttribute("height",H);
+  const D=diag.getBoundingClientRect();
+  const pos=el=>{ const r=el.getBoundingClientRect(); return {cx:r.left-D.left+r.width/2, top:r.top-D.top, bot:r.top-D.top+r.height}; };
+  const jbof=diag.querySelector(".dTier.jbof"), cold=diag.querySelector(".dTier.cold");
+  const podEl=jbof||cold; let out="";
+  if(podEl){ const p=pos(podEl);
+    diag.querySelectorAll(".dNode").forEach(ne=>{ const c=pos(ne);
+      out+=`<path class="dLink" d="M ${c.cx} ${c.bot} C ${c.cx} ${c.bot+22}, ${c.cx} ${p.top-22}, ${c.cx} ${p.top}"/>`; });
+  }
+  if(jbof&&cold){ const a=pos(jbof), b=pos(cold); out+=`<path class="dLink c" d="M ${a.cx} ${a.bot} L ${b.cx} ${b.top}"/>`; }
+  svg.innerHTML=out;
+}
 
 // --------------------------------------------------------- emit + validate ---
 function emit(){
@@ -544,6 +619,13 @@ function addComp(comp, targetId){
   else if(comp==="coldstore"){ if(!state.pod.coldstore) state.pod.coldstore=tier(COLD_PRESETS["small (4096 GiB)"]); }
   render();
 }
+// add a component to the most sensible target (used by click-to-add and the topology drop zone):
+// pod tiers + node go straight in; instance/flash/nodecpu attach to the last node (creating one if needed).
+function addSmart(comp){
+  if(comp==="node"||comp==="jbof"||comp==="coldstore") return addComp(comp);
+  if(!state.nodes.length) addComp("node");
+  addComp(comp, state.nodes[state.nodes.length-1].id);
+}
 function delComp(spec){
   const [kind,id]=spec.split(":");
   if(kind==="node") state.nodes=state.nodes.filter(n=>n.id!==id);
@@ -637,8 +719,8 @@ function flash(msg,bad){ const s=$("saveStatus"); s.textContent=msg; s.style.col
 
 // --------------------------------------------------------------- wiring -----
 function mountFabricExtras(){
-  // inject run-settings into the fabric card (first .card in center)
-  const fabric=document.querySelector(".center .card");
+  // inject run-settings into the fabric card
+  const fabric=$("fabricCard");
   let box=$("runsettings");
   if(!box){ box=document.createElement("div"); box.id="runsettings"; fabric.appendChild(box); }
   box.innerHTML=runSettingsUI();
@@ -647,8 +729,18 @@ function mountFabricExtras(){
   fabric.querySelector('[data-field="link_bw"]').value=state.link_bw;
   fabric.querySelector('[data-field="link_latency"]').value=state.link_latency;
 }
-// palette drag
+// palette: DRAG (setData) + CLICK-to-add (no scrolling required)
 $("palette").addEventListener("dragstart",e=>{ const it=e.target.closest("[data-comp]"); if(it) e.dataTransfer.setData("comp",it.dataset.comp); });
+$("palette").addEventListener("click",e=>{ const it=e.target.closest("[data-comp]"); if(it){ addSmart(it.dataset.comp); flash("added "+it.dataset.comp); } });
+// auto-scroll the page while dragging near the top/bottom edge (HTML5 DnD blocks manual scrolling)
+let _asTimer=null;
+function _autoScroll(e){ const y=e.clientY, h=window.innerHeight, M=90, step=22;
+  if(_asTimer){ clearInterval(_asTimer); _asTimer=null; }
+  if(y<M) _asTimer=setInterval(()=>window.scrollBy(0,-step),16);
+  else if(y>h-M) _asTimer=setInterval(()=>window.scrollBy(0,step),16); }
+function _stopScroll(){ if(_asTimer){ clearInterval(_asTimer); _asTimer=null; } }
+document.addEventListener("dragover",_autoScroll);
+document.addEventListener("drop",_stopScroll); document.addEventListener("dragend",_stopScroll);
 // drop zones (delegated on document, uses data-drop)
 document.addEventListener("dragover",e=>{ const z=e.target.closest("[data-drop]"); if(z){ e.preventDefault(); z.classList.add("over"); } });
 document.addEventListener("dragleave",e=>{ const z=e.target.closest("[data-drop]"); if(z) z.classList.remove("over"); });
@@ -656,7 +748,7 @@ document.addEventListener("drop",e=>{
   const z=e.target.closest("[data-drop]"); if(!z) return; e.preventDefault(); z.classList.remove("over");
   const comp=e.dataTransfer.getData("comp"); if(!comp) return;
   const zone=z.dataset.drop;
-  if(zone==="canvas"){ if(comp==="node") addComp("node"); else if(comp==="instance"){ if(!state.nodes.length) addComp("node"); addComp("instance", state.nodes[state.nodes.length-1]?.id); } else flash("drop "+comp+" on its target",true); }
+  if(zone==="canvas"||zone==="diagram"){ addSmart(comp); }
   else if(zone==="pod"){ if(comp==="jbof"||comp==="coldstore") addComp(comp); else flash("pod tiers accept JBOF/COLDSTORE",true); }
   else if(zone.startsWith("node:")){ const id=zone.split(":")[1];
     if(comp==="instance") addComp("instance",id);
@@ -664,6 +756,8 @@ document.addEventListener("drop",e=>{
     else if(comp==="nodecpu") addComp("nodecpu",id);
     else flash(comp+" can't drop on a node",true); }
 });
+// redraw connector lines when layout width changes
+window.addEventListener("resize",()=>drawConnectors());
 // clicks: add / delete / preset are handled below via change+click delegation
 document.addEventListener("click",e=>{
   const add=e.target.closest("[data-add]"); if(add){ const [c,id]=add.dataset.add.split(":"); addComp(c,id); return; }
@@ -675,6 +769,8 @@ document.addEventListener("change",e=>{
   if(e.target.matches("[data-scope]")) setField(e.target);
 });
 $("dlBtn").onclick=downloadJSON; $("copyBtn").onclick=copyJSON; $("copyCmd").onclick=copyCmd; $("saveBtn").onclick=saveServer;
+$("topoToggle").onclick=()=>{ const c=$("topoCard"); const now=c.classList.toggle("collapsed");
+  $("topoToggle").textContent=now?"expand":"collapse"; if(!now) drawConnectors(); };
 document.querySelectorAll("[data-tpl]").forEach(b=>b.onclick=()=>{ ({blank:tplBlank,qwen:tplQwen,vr:tplVR})[b.dataset.tpl](); boot(); });
 // theme
 function applyTheme(t){ document.body.classList.toggle("light",t==="light"); $("themeBtn").textContent=(t==="light"?"☀ theme":"🌙 theme"); }

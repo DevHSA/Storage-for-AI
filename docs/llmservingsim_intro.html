@@ -1058,11 +1058,13 @@ bash scripts/compile.sh          <span class="cm"># builds the ASTRA-Sim analyti
     <div class="t">Don't want to hand-write the cluster JSON?</div>
     Run <code>python3 serving/dashboard/serve.py</code> and open <code>http://localhost:8000/config</code>
     for a <b>drag-and-drop config builder</b> (also usable offline as
-    <code>serving/dashboard/config_builder.html</code>). Drag <span class="pill tag-node">Node</span>
+    <code>serving/dashboard/config_builder.html</code>). <b>Click or drag</b>
+    <span class="pill tag-node">Node</span>
     <span class="pill tag-inst">Instance</span> <span class="pill tag-jbof">JBOF</span>
-    <span class="pill tag-cold">COLDSTORE</span> onto a canvas, set capacities inline (Vera-Rubin presets
-    included), and it emits a validated <code>configs/cluster/*.json</code> plus the matching run command —
-    live-checking that weights fit the NPU, KV has room, and each node has a CPU.
+    <span class="pill tag-cold">COLDSTORE</span> components — a <b>live topology diagram</b> draws them as
+    boxes + connection lines — set capacities inline (Vera-Rubin presets included), and it emits a validated
+    <code>configs/cluster/*.json</code> plus the matching run command — live-checking that weights fit the
+    NPU, KV has room, and each node has a CPU.
   </div>
   <h3>Reproduce the four examples — copy &amp; paste</h3>
   <p>Run these <b>inside the container</b> (after <code>./scripts/docker-sim.sh</code> then
