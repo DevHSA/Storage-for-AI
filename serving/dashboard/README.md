@@ -49,9 +49,14 @@ fully offline by opening `serving/dashboard/config_builder.html` directly.
 
 - **Click** a palette component to add it (no scrolling), or **drag** it onto the
   sticky **live topology diagram** (boxes + connection lines that redraw as you
-  build) / a node; the page auto-scrolls while dragging near an edge. Set each
-  component's capacity / BW / latency inline. Vera-Rubin and scaled presets are one
-  click; templates seed a Qwen 2×2 or a Vera-Rubin tray.
+  build) / a node / an instance; the page auto-scrolls while dragging near an edge.
+  Set each component's capacity / BW / latency inline. Vera-Rubin and scaled presets
+  are one click; templates seed a Qwen 2×2 or a Vera-Rubin tray.
+- **Two ways to attach CPU DRAM**: a **Node CPU pool** (host DRAM shared by the
+  node's instances → node-level `cpu_mem`, used with `--cpu-scope per_node`), or an
+  **Instance CPU** dedicated to a single instance/superchip (drop it on an instance
+  → per-instance `cpu_mem`, used with `--cpu-scope per_instance`, e.g. Vera Rubin's
+  1 CPU : 2 GPU superchip).
 - **Live validation** against the real parser rules (weights must fit the NPU, KV
   room ≥ one block, a node needs a CPU pool or per-instance CPU on all instances,
   TP∈{1,2} is profiled, prefix-storage vs declared tiers) plus a live

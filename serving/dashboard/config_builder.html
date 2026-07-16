@@ -127,7 +127,7 @@ select.full{width:100%}
   <div class="left">
     <div class="card sticky">
       <h2>Components</h2>
-      <div class="hint"><b>Click to add</b> (no scrolling needed), or drag onto the <b>Topology</b> panel / a node. The page auto-scrolls while you drag near an edge.</div>
+      <div class="hint"><b>Click to add</b> (no scrolling needed), or drag onto the <b>Topology</b> panel / a node / an instance. The page auto-scrolls while you drag near an edge.</div>
       <div id="palette">
         <div class="palette-item" draggable="true" data-comp="node">
           <span class="dot" style="background:var(--accent2)"></span>
@@ -143,7 +143,11 @@ select.full{width:100%}
         </div>
         <div class="palette-item" draggable="true" data-comp="nodecpu">
           <span class="dot" style="background:var(--cpu)"></span>
-          <div><b>Node CPU pool</b><small>explicit host DRAM. Drop on a node</small></div>
+          <div><b>Node CPU pool</b><small>host DRAM shared by the node (per_node). Drop on a node</small></div>
+        </div>
+        <div class="palette-item" draggable="true" data-comp="instcpu">
+          <span class="dot" style="background:var(--cpu)"></span>
+          <div><b>Instance CPU</b><small>host DRAM dedicated to one instance / superchip (per_instance). Drop on an instance</small></div>
         </div>
         <div class="palette-item" draggable="true" data-comp="jbof">
           <span class="dot" style="background:var(--jbof)"></span>
@@ -436,7 +440,7 @@ function renderInst(n,i,ii){
   const cpuBlock = i.cpu
     ? `<div class="grp"><div class="gh"><span class="pill tag-cpu">CPU</span> per-instance <button class="remove" data-del="instcpu:${i.id}">✕</button></div>${memFields("instcpu:"+i.id,i.id,i.cpu,false)}</div>`
     : `<button class="mini ghost" data-add="instcpu:${i.id}" style="margin-top:6px">+ per-instance CPU</button>`;
-  return `<div class="inst">
+  return `<div class="inst drop" data-drop="inst:${i.id}">
     <div class="hd"><span class="pill tag-inst">Instance ${ii}</span>
       <span class="spacer" style="flex:1"></span>
       <button class="remove" data-del="inst:${i.id}">✕</button></div>
@@ -624,7 +628,13 @@ function addComp(comp, targetId){
 function addSmart(comp){
   if(comp==="node"||comp==="jbof"||comp==="coldstore") return addComp(comp);
   if(!state.nodes.length) addComp("node");
-  addComp(comp, state.nodes[state.nodes.length-1].id);
+  const lastNode=()=>state.nodes[state.nodes.length-1];
+  if(comp==="instcpu"){                 // per-instance CPU attaches to the last instance
+    let n=lastNode();
+    if(!n.instances.length){ addComp("instance", n.id); n=lastNode(); }
+    return addComp("instcpu", n.instances[n.instances.length-1].id);
+  }
+  addComp(comp, lastNode().id);
 }
 function delComp(spec){
   const [kind,id]=spec.split(":");
@@ -754,7 +764,15 @@ document.addEventListener("drop",e=>{
     if(comp==="instance") addComp("instance",id);
     else if(comp==="flash") addComp("flash",id);
     else if(comp==="nodecpu") addComp("nodecpu",id);
+    else if(comp==="instcpu") flash("drop Instance CPU on an instance, not the node",true);
     else flash(comp+" can't drop on a node",true); }
+  else if(zone.startsWith("inst:")){ const id=zone.split(":")[1];
+    if(comp==="instcpu") addComp("instcpu",id);
+    else { const f=findInst(id);                       // forgiving: redirect node-level comps to the parent node
+      if(f && f.n){ if(comp==="instance") addComp("instance",f.n.id);
+        else if(comp==="flash") addComp("flash",f.n.id);
+        else if(comp==="nodecpu") addComp("nodecpu",f.n.id);
+        else flash(comp+" can't drop on an instance",true); } } }
 });
 // redraw connector lines when layout width changes
 window.addEventListener("resize",()=>drawConnectors());
