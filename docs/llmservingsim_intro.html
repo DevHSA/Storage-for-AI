@@ -303,8 +303,11 @@ COLDSTORE           0    0.00%        0.00     3866.25    188.00   2.008%</pre>
     <code>--tier-policy exclusive</code>) is reusable by <b>any other tray</b> — its prefill reloads from the
     pool instead of recomputing, so its TTFT drops thanks to work a <em>different</em> tray did. A runnable
     demo (<code>run_cross_rack_demo.sh</code>, producer pinned to tray 0 and reuser to tray 1 via
-    <code>--request-routing-policy CUSTOM</code>) shows the tray-1 reuse hitting JBOF cross-rack with mean TTFT
-    <b>~2.7&times; lower</b> (and reload ~12&times; faster) than falling back to COLDSTORE. See the flags guide §4g.
+    <code>--request-routing-policy CUSTOM</code>) runs it three ways: with JBOF the tray-1 reuse hits JBOF
+    cross-rack with mean TTFT <b>~2.7&times; lower</b> (reload ~12&times; faster) than COLDSTORE; and a
+    <b>CPU-only</b> run (no shared tier — CPU is per-rack) can't reuse across racks <em>at all</em> and must
+    recompute. Only JBOF makes cross-rack reuse worthwhile: COLDSTORE's reload is so slow it is no cheaper than
+    that recompute. See the flags guide §4g.
   </div>
   <p>To model <b>heterogeneous or explicit per-GPU host memory</b>, declare a <code>cpu_mem</code> block inside
   each instance (exactly like <code>npu_mem</code>) — this is the <b>preferred</b> form: it sizes that

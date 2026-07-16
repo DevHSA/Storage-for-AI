@@ -500,17 +500,23 @@ python -m serving --cluster-config configs/cluster/cross_rack_jbof.json \
   <p>How it works: tray 0 computes N distinct contexts (they cascade into JBOF); after a gap, tray 1 reuses
   each one. Tray 1 never computed them and can't see tray 0's per-node NPU/CPU, so every hit is a
   <b>cross-rack</b> hit on the pooled tier.</p>
+  <p>Three ways to run it (<code>run_cross_rack_demo.sh</code> does all three): WITH a pod-wide JBOF, WITHOUT
+  it (falls back to COLDSTORE), and <b>CPU-only</b> — no shared tier at all, so the CPU (which is per-rack)
+  can't carry a context to another tray and cross-rack reuse is <b>impossible</b> (tray 1 recomputes).</p>
   <table>
-    <tr><th>Metric (tray-1 reuse of tray-0 context)</th><th>WITH JBOF</th><th>WITHOUT JBOF (COLDSTORE)</th></tr>
-    <tr><td>Deep-tier hit tokens (cross-rack)</td><td>16384 on <b>JBOF</b></td><td>16384 on <b>COLDSTORE</b></td></tr>
-    <tr><td>Total reload latency</td><td><b>55.7 ms</b></td><td>687.3 ms&nbsp; (~12&times;)</td></tr>
-    <tr><td>First reuse TTFT (queue-free)</td><td><b>19.1 ms</b></td><td>98.1 ms&nbsp; (~5&times;)</td></tr>
-    <tr><td>Mean phase-2 (reuse) TTFT</td><td><b>204.9 ms</b></td><td>560.1 ms&nbsp; (2.7&times;)</td></tr>
-    <tr><td>Phase-1 produce TTFT (control)</td><td>732.2 ms</td><td>732.2 ms (identical)</td></tr>
+    <tr><th>Metric (tray-1 reuse of tray-0 context)</th><th>WITH JBOF</th><th>WITHOUT JBOF (COLDSTORE)</th><th>CPU-only (no shared tier)</th></tr>
+    <tr><td>Cross-rack deep-tier hit tokens</td><td>16384 on <b>JBOF</b></td><td>16384 on <b>COLDSTORE</b></td><td><b>0</b> — 0% hit (no reuse)</td></tr>
+    <tr><td>Total reload latency</td><td><b>55.7 ms</b></td><td>687.3 ms&nbsp; (~12&times;)</td><td>0 (nothing reloaded; recomputed)</td></tr>
+    <tr><td>First reuse TTFT (queue-free)</td><td><b>19.1 ms</b></td><td>98.1 ms</td><td>95.5 ms (full recompute)</td></tr>
+    <tr><td>Mean phase-2 (reuse) TTFT</td><td><b>204.9 ms</b></td><td>560.1 ms</td><td>549.3 ms (full recompute)</td></tr>
+    <tr><td>Phase-1 produce TTFT (control)</td><td>732.2 ms</td><td colspan="2">732.2 ms (identical — same producer work)</td></tr>
   </table>
-  <div class="win"><b>Proof:</b> the reuse hits land on <b>JBOF</b> (NPU/CPU hits = 0, since tray 1 never held
-  the context), and tray 1's TTFT is 2.7&times; lower (5&times; on the first, queue-free reuse). Verified at
-  8 contexts; scale with <code>run_cross_rack_demo.sh &lt;N_CTX&gt; &lt;CTX_LEN&gt;</code>.</div>
+  <div class="win"><b>Proof &amp; takeaway:</b> WITH JBOF the reuse hits land on <b>JBOF</b> (NPU/CPU hits = 0,
+  since tray 1 never held the context) and tray-1 TTFT is <b>2.7&times; lower</b> (5&times; on the first,
+  queue-free reuse). And <b>only JBOF makes cross-rack reuse pay off</b>: COLDSTORE's reload is so slow it is
+  <em>no cheaper than recomputing</em> (compare COLDSTORE 98 ms vs CPU-only recompute 95 ms), while CPU-only
+  can't reuse across racks at all (0% hit). Verified at 8 contexts; scale with
+  <code>run_cross_rack_demo.sh &lt;N_CTX&gt; &lt;CTX_LEN&gt;</code>.</div>
 
   <!-- ============================================================ -->
   <h2 id="showcase">5. Realistic sharegpt showcase</h2>
