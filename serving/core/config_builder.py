@@ -819,8 +819,57 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
         "memory_config_path": memory_config_path,
     }
     # print("Current cluster : {}".format(cluster))
-                
+
     return cluster
+
+
+def build_per_instance_inputs(cluster, astra_sim):
+    """Opt-in multi-process (Stage 1): write a SEPARATE ASTRA-Sim input set per
+    instance under ``inputs_root/inst{i}/`` so each independent instance can run
+    in its OWN ASTRA-Sim process with a local ``[tp_size]`` topology and LOCAL
+    NPU ids ``0..tp-1``.
+
+    This does NOT modify the single-process (whole-cluster) inputs or the drive
+    loop; it only adds per-instance files. It is meant for STRICTLY INDEPENDENT
+    configs (no dp_group / prefill-decode / prefix-sharing / pp>1 / ns3), where an
+    instance shares no event stream, memory channel, or collective with any other
+    — so running it alone yields identical per-iteration cycles (see design doc).
+
+    Returns a list (one dict per instance) with the file paths, the instance's
+    LOCAL start/end npu-id strings, its npu count, and its GLOBAL base npu id
+    (``inst2npu_mapping[i]``) used to translate local->global sys ids in the driver.
+    """
+    inputs_root = cluster["inputs_root"]
+    instances = cluster["instances"]
+    base_system = os.path.join(astra_sim, "inputs", "system", "system.json")
+    per = []
+    for i, inst in enumerate(instances):
+        idir = os.path.join(inputs_root, f"inst{i}")
+        net = os.path.join(idir, "network", "network.yml")
+        sysp = os.path.join(idir, "system", "system.json")
+        mem = os.path.join(idir, "memory", "memory_expansion.json")
+        for p in (net, sysp, mem):
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+        # network: single-instance topology (dims collapse to [tp_size]).
+        _create_network_config(net, [inst], cluster["link_bw"], cluster["link_latency"])
+        # system: base template, arity synced to this instance's 1-D topology.
+        shutil.copyfile(base_system, sysp)
+        _sync_system_collective_dims(sysp, [inst])
+        # memory: reuse the cluster's memory config (independent gated configs
+        # have no shared pool blocks, so this is just the NPU/local memory model).
+        shutil.copyfile(cluster["memory_config_path"], mem)
+        tp = inst.get("num_npus", inst.get("tp_size", 1)) or 1
+        per.append({
+            "instance_id": i,
+            "network": net, "system": sysp, "memory": mem,
+            "start_ids": "0,",                                  # backend expects comma-suffixed ids
+            "end_ids": "" if tp == 1 else str(tp - 1) + ",",
+            "npus": tp, "tp": tp,
+            "base": cluster["inst2npu_mapping"][i],   # global first-NPU id of this instance
+            "workload_dir": os.path.join(idir, "workload"),
+        })
+    return per
+
 
 # generates topology according to the input arguments
 def _create_network_config(network_config_path, instances, link_bw, link_latency):

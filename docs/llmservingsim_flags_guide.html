@@ -88,6 +88,7 @@
   <a href="#ex-dash" class="sub">4e. --dashboard / --log-interval</a>
   <a href="#ex-session" class="sub">4f. --session-metrics (decode)</a>
   <a href="#ex-crossrack" class="sub">4g. cross-rack JBOF reuse</a>
+  <a href="#ex-parallel" class="sub">4h. --parallel-instances (fast startup)</a>
   <a href="#showcase">5. Realistic sharegpt showcase</a>
   <a href="#sizing">6. Sizing rules (avoid crashes)</a>
 </nav>
@@ -225,6 +226,7 @@
     <tr><td class="num">--log-interval SEC</td><td>How often (sim seconds) to log a throughput sample / dashboard point (default 1.0). Lower = denser charts; must be &lt; total sim time or the charts show "collecting samples". §4e.</td></tr>
     <tr><td class="num">--session-metrics</td><td>For multi-turn / agentic-session workloads (records with <code>sub_requests</code>): split TTFT into first-turn (cold) vs resumed-turn (warm, context reloaded). Exposes the pause/resume "context-parking" JBOF benefit. §4f.</td></tr>
     <tr><td class="num">--request-routing-policy</td><td><code>LOAD</code> (default) / <code>RR</code> / <code>RAND</code> / <code>CUSTOM</code>. Under <code>CUSTOM</code>, a request's optional <code>target_instance</code> field pins it to a specific instance — used to place a producer on one tray and the reuser on another for the cross-rack JBOF demo. §4g.</td></tr>
+    <tr><td class="num">--parallel-instances</td><td>OPT-IN fast startup for many <b>independent</b> instances: runs each instance in its own ASTRA-Sim process instead of one process for all NPUs, removing the O(N²) cross-instance idle-poll storm (e.g. 16 instances: <b>hours&nbsp;→&nbsp;~8&nbsp;s</b>). Only engages for strictly-independent configs (no dp_group / prefill-decode / prefix-sharing / pp&gt;1 / ns3) with order-based routing (RR/RAND/CUSTOM); else silently single-process. <b>Approximate</b>: ~0.1% timing difference vs single-process (a lone instance is modeled as a [tp] topology, not [tp,N]). §4h.</td></tr>
     <tr><td class="num">--dtype / --block-size / --dataset / --output</td><td>Precision (<code>float16</code>), KV block size (16), the workload JSONL, and the per-request CSV.</td></tr>
   </table>
 
@@ -526,6 +528,35 @@ python -m serving --cluster-config configs/cluster/cross_rack_jbof.json \
   <em>no cheaper than recomputing</em> (compare COLDSTORE 98 ms vs CPU-only recompute 95 ms), while CPU-only
   can't reuse across racks at all (0% hit). Verified at 8 contexts; scale with
   <code>run_cross_rack_demo.sh &lt;N_CTX&gt; &lt;CTX_LEN&gt;</code>.</div>
+
+  <!-- ============================================================ -->
+  <h3 id="ex-parallel">4h. <code>--parallel-instances</code> — fast startup for many independent instances</h3>
+  <p>A cluster with many <b>independent</b> instances (each its own model on TP GPUs, no cross-instance coupling) is
+  normally simulated by <b>one</b> ASTRA-Sim process driving all NPUs. That process re-polls every idle NPU on every
+  event-queue step while any one instance runs an iteration, an <b>O(N²) idle "pass-storm"</b> that makes startup
+  grow quadratically — a 16-instance run effectively never starts. <code>--parallel-instances</code> runs
+  <b>each independent instance in its own ASTRA-Sim process</b> (a <code>[tp]</code> topology), so no instance polls
+  another's NPUs:</p>
+  <pre class="code">python -m serving --cluster-config configs/cluster/1rack_16instances.json \
+  --dtype float16 --block-size 16 --enable-prefix-caching --cpu-scope per_instance \
+  --max-num-seqs 2 <span class="j">--request-routing-policy RR --parallel-instances</span> \
+  --dataset workloads/example_trace.jsonl --output outputs/16inst.csv</pre>
+  <table>
+    <tr><th>instances</th><th>single-process</th><th>--parallel-instances</th><th>speedup</th></tr>
+    <tr><td>1</td><td>4.5 s</td><td>4.3 s</td><td>~1&times;</td></tr>
+    <tr><td>2</td><td>18.8 s</td><td>4.8 s</td><td>3.9&times;</td></tr>
+    <tr><td>4</td><td>124.8 s</td><td><b>5.7 s</b></td><td><b>22&times;</b></td></tr>
+    <tr><td>8</td><td>&gt;250 s (timeout)</td><td><b>7.9 s</b></td><td>&gt;30&times;</td></tr>
+    <tr><td>16</td><td>hours / never</td><td><b>8.2 s</b></td><td>huge</td></tr>
+  </table>
+  <div class="box gotcha"><div class="t">When it engages, and the accuracy caveat</div>
+  It engages ONLY for strictly-independent configs (no <code>dp_group</code> / prefill-decode / prefix-sharing /
+  <code>pp&gt;1</code> / ns3 / multi-node instance) with <b>order-based routing</b> (<code>RR</code>/<code>RAND</code>/
+  <code>CUSTOM</code>); anything else silently runs single-process (so it never breaks a working config).
+  It is <b>approximate</b>: results match single-process to within <b>~0.1%</b> (e.g. TTFT differs ~0.16%). Cause:
+  a lone instance is modeled as a <code>[tp]</code> topology, whereas single-process models it inside the whole-cluster
+  <code>[tp,N]</code> topology; the extra traffic-free dimension slightly shifts TP-collective timing. Use it for
+  fast iteration / large-instance-count startup; use single-process when you need the exact established baseline.</div>
 
   <!-- ============================================================ -->
   <h2 id="showcase">5. Realistic sharegpt showcase</h2>

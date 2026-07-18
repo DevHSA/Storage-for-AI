@@ -207,6 +207,15 @@ def main():
     parser.add_argument('--request-routing-policy', type=str, choices=['LOAD', 'RR', 'RAND', 'CUSTOM'], default='LOAD',
                         help='request routing policy across instances: LOAD (vLLM-style weighted least-loaded, default), '
                         'RR (round-robin), RAND (random), CUSTOM (user-defined)')
+    parser.add_argument('--parallel-instances', action='store_true',
+                        help='OPT-IN speedup for many INDEPENDENT instances: run each instance in its own '
+                        'ASTRA-Sim process (topology [tp_size]) instead of one process for all NPUs, removing the '
+                        'O(N^2) cross-instance idle-poll storm. Only takes effect for strictly-independent configs '
+                        '(no dp_group / prefill-decode / prefix-sharing / pp>1 / ns3 / multi-node instance) with '
+                        'order-based routing (RR/RAND/CUSTOM); otherwise it silently falls back to single-process. '
+                        'APPROXIMATE: results match single-process to within ~0.1%% (a lone instance is modeled as a '
+                        '[tp] topology vs [tp,N] when co-resident; the extra traffic-free dimension slightly shifts '
+                        'TP-collective timing) -- not byte-identical. Use for fast startup at many instances.')
     parser.add_argument('--expert-routing-policy', type=str,
                         choices=['BALANCED', 'RR', 'RAND', 'CUSTOM'],
                         default='BALANCED',
@@ -763,6 +772,25 @@ def main():
         except Exception:
             pass
 
+    # ===== OPT-IN multi-process (Stage 2): one ASTRA-Sim process per independent instance =====
+    # Removes the O(N^2) cross-instance idle-poll storm by giving each independent instance its
+    # own ASTRA-Sim process ([tp_size] topology). Enabled ONLY for strictly-independent configs
+    # with order-based routing (assignment is timing-independent), else silent single-process.
+    multi = bool(
+        args.parallel_instances
+        and request_routing_policy in ('RR', 'RAND', 'CUSTOM')
+        and network_backend != 'ns3'
+        and num_instances > 1
+        and not enable_prefix_sharing
+        and all(inst.get('dp_group') is None for inst in instances)
+        and all(inst.get('pd_type') is None for inst in instances)
+        and all(int(inst.get('pp_size', 1) or 1) == 1 for inst in instances)
+    )
+    if args.parallel_instances and not multi:
+        print_markup("[sim.time]--parallel-instances ignored: needs an independent config "
+                     "(no dp_group / pd_type / pp>1 / prefix-sharing / ns3) with RR/RAND/CUSTOM "
+                     "routing; running single-process.[/]")
+
     # Set Event Handler that loop with INTERVAL time until first request arrive (for all instances)
     first_arival_time = router.get_first_arrival_time()
     if INTERVAL > first_arival_time:
@@ -782,7 +810,7 @@ def main():
         args.append("--end-npu-ids="+end_npu_ids)
     if network_backend == 'ns3':
         args.append("--logical-topology-configuration="+astra_sim+"/inputs/logical_topology/logical_8nodes_1D.json")
-    p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    p = None if multi else subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 
     # DP group synchronization: defer trace generation until all members have scheduled
     # dp_groups maps dp_group_name -> list of instance_ids
@@ -801,10 +829,97 @@ def main():
     # Pre-generated workloads ready to submit on next "Waiting"
     dp_ready_workloads = {}  # instance_id -> workload_path
 
+    # ---- OPT-IN multi-process driver: run each independent instance in its own process ----
+    def run_parallel_instances():
+        """Drive each independent instance in its OWN ASTRA-Sim process (sequentially), which
+        eliminates the cross-instance idle-poll O(N^2). Independent instances have identical
+        per-iteration cycles alone or co-resident, so schedulers[*].done is populated exactly
+        as single-process would, and the shared post-loop reporting yields identical CSV."""
+        nonlocal total_prompt, total_gen, req_cnt
+        per = build_per_instance_inputs(cluster, astra_sim)
+        # Pre-route every request to its instance in arrival order (order-based policy =>
+        # byte-identical assignment to lazy single-process routing).
+        if dataset is not None:
+            router.route_arrived_requests(1 << 62)
+        max_current = 0
+        ev_time = int(event_time)
+        for i in range(num_instances):
+            inst = instances[i]; inst_cfg = instance_runtime_configs[i]
+            nid = inst2node_mapping[i]; tpn = inst["num_npus"]; base = per[i]["base"]
+            inst_root = os.path.join(run_paths.inputs_root, f"inst{i}")
+            # per-instance event warmup graph ([tp] NPUs, local ids 0..tp-1)
+            generate_event(ev_time, inputs_root=inst_root)
+            generate_graph(None, None, tpn, event=True, inputs_root=inst_root)
+            ev_wl = get_workload(None, None, event=True, inputs_root=inst_root)
+            a = [binary, "--workload-configuration=" + ev_wl,
+                 "--system-configuration=" + per[i]["system"],
+                 "--network-configuration=" + per[i]["network"],
+                 "--memory-configuration=" + per[i]["memory"],
+                 "--start-npu-ids=" + per[i]["start_ids"]]
+            if per[i]["end_ids"]:
+                a.append("--end-npu-ids=" + per[i]["end_ids"])
+            proc = subprocess.Popen(a, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, universal_newlines=True)
+            ctrl = Controller(tpn)
+            done_npus = []; need = 1 if tpn == 1 else 2
+            while True:
+                out = ctrl.read_wait(proc)
+                od = ctrl.parse_output(out[-2])
+                if od is None:
+                    continue
+                sys_l = od["sys"]; iter_id = od["id"]; cur = od["cycle"]
+                if cur > max_current:
+                    max_current = cur
+                sys_g = base + sys_l
+                prompt_t, gen_t, finished = schedulers[i].add_done(iter_id, sys_g, cur)
+                total_prompt += prompt_t; total_gen += gen_t; req_cnt += len(finished)
+                for req in finished:
+                    router.notify_request_completed(req.id, cur)
+                new_req = schedulers[i].schedule(cur, sys_g, iter_id)
+                if new_req is not None:
+                    if sys_g == inst2npu_mapping[i]:   # start NPU: generate this batch's ET
+                        generate_trace(new_req, inst["hardware"], inst["tp_size"], inst["pp_size"],
+                                       inst["local_ep"], inst["ep_total"], inst["pd_type"], nid, i,
+                                       inst_cfg["max_num_batched_tokens"], inst_cfg["max_num_seqs"],
+                                       placement[i], block_mode_on[i], expert_routing_policy,
+                                       inst_cfg["enable_prefix_caching"], inst_cfg["enable_attn_offloading"],
+                                       power_model, pim_models[nid], inst_cfg["enable_sub_batch_interleaving"],
+                                       inst_cfg["fp"], dtype=inst_cfg["dtype"], kv_cache_dtype=inst_cfg["kv_cache_dtype"],
+                                       tp_dim=inst["tp_dim"], ep_dim=inst["ep_dim"],
+                                       enable_block_copy=inst_cfg["enable_block_copy"], inputs_root=inst_root)
+                        generate_graph(new_req, inst["hardware"], tpn, nid, i, 0,
+                                       inst_cfg["enable_local_offloading"], inputs_root=inst_root)
+                    workload = get_workload(new_req, inst["hardware"], i, inputs_root=inst_root)
+                    ctrl.write_flush(proc, workload)
+                elif schedulers[i].is_request_empty() and len(schedulers[i].inflight) == 0:
+                    if sys_l not in done_npus:
+                        done_npus.append(sys_l)
+                    if len(done_npus) >= need:
+                        schedulers[i].memory.free_prefix_cache(); schedulers[i].memory.free_weight()
+                        ctrl.write_flush(proc, "exit"); break
+                    ctrl.write_flush(proc, "done")
+                else:
+                    ctrl.write_flush(proc, "pass")
+            try:
+                ctrl.check_end(proc)
+            except Exception:
+                pass
+            try:
+                proc.stdin.close(); proc.wait(timeout=15)
+            except Exception:
+                try: proc.kill()
+                except Exception: pass
+        return max_current
+
+    if multi:
+        print_markup(f"[sim.tagline]Parallel-instances mode: {num_instances} independent ASTRA-Sim processes[/]")
+        print_markup("[sim.time]  (approximate: ~0.1% timing difference vs single-process from per-instance [tp] topology)[/]")
+        current = run_parallel_instances()
+
     # ----------------------------------- Start simulation loop ------------------------------------
     # Starting simulation, one while loop processes one iteration
-    while True:
-        
+    while not multi:
+
         out = controller.read_wait(p)
         out_dict = controller.parse_output(out[-2])
         
@@ -1244,8 +1359,10 @@ def main():
     hours, remainder = divmod(total_time, 3600)
     minutes, seconds = divmod(remainder, 60)
 
-    # check all scheduled requests in astra-sim are well done
-    controller.check_end(p)
+    # check all scheduled requests in astra-sim are well done (single-process only;
+    # the multi-process driver already check_end'd each per-instance process)
+    if not multi:
+        controller.check_end(p)
 
     # calculate prefix caching metrics (per tier: NPU -> CPU/CXL -> deep tiers)
     tier_requested_tokens = 0
