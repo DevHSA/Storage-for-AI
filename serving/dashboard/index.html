@@ -87,6 +87,20 @@
   .foot{color:var(--muted);font-size:12px;margin-top:26px;border-top:1px solid var(--line);padding-top:10px}
   .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--accent);margin-right:6px}
   .sublead{color:var(--muted);font-size:11px;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+  /* per-chart "how it's calculated" explainer (technical + simplified) */
+  .explain{margin-top:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px}
+  .explain>summary{cursor:pointer;padding:7px 10px;color:var(--muted);font-weight:600;list-style:none;user-select:none}
+  .explain>summary::-webkit-details-marker{display:none}
+  .explain>summary::before{content:"ℹ️ ";}
+  .explain[open]>summary{border-bottom:1px solid var(--line);color:var(--txt)}
+  .explain .body{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+  .explain .tech, .explain .simple{padding:8px 10px;border-radius:6px;line-height:1.5}
+  .explain .tech{background:rgba(127,127,127,.10);border-left:3px solid var(--accent)}
+  .explain .simple{background:rgba(127,127,127,.05);border-left:3px solid var(--jbof)}
+  .explain .lab{display:block;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:3px}
+  .explain code{background:rgba(127,127,127,.16);padding:1px 5px;border-radius:4px;font-size:11.5px}
+  .explain .f{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--txt)}
+  .badge-new{display:inline-block;background:var(--jbof);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;vertical-align:middle;margin-left:6px}
 </style>
 </head>
 <body>
@@ -116,29 +130,90 @@
   <div id="tiles" class="tiles"></div>
 
   <div class="grid2" style="margin-top:8px">
-    <div><h2>⚡ Throughput over sim time</h2><div class="card"><div id="chartThr"></div></div></div>
+    <div><h2>⚡ Throughput over sim time</h2><div class="card"><div id="chartThr"></div></div>
+      <details class="explain"><summary>How this is calculated</summary><div class="body">
+        <div class="tech"><span class="lab">Technical</span> Two lines sampled once per <code>--log-interval</code> Δ (here 1&nbsp;s).
+          <span class="f">prompt_tps = (prompt/prefill tokens processed during Δ) / Δ</span>;
+          <span class="f">decode_tps = (output/decode tokens processed during Δ) / Δ</span>.
+          Internally tokens accrued in the interval are scaled by <span class="f">FREQ/INTERVAL</span> (INTERVAL = log_interval×FREQ, FREQ = 1e9&nbsp;ns/s).</div>
+        <div class="simple"><span class="lab">In plain words</span> How many prompt tokens (reading the question) and output tokens (writing the answer) the whole cluster produces each second, plotted over time. Prompt work dominates while requests arrive; when arrivals stop, decode takes over and its line jumps up.</div>
+      </div></details></div>
     <div><h2>🧠 KV spill memory over sim time</h2><div class="card"><div id="chartMem"></div>
-      <div class="sub" style="margin-top:4px">Stacked usage of the spill tiers (CPU → deep tiers). NPU HBM shown separately below.</div></div></div>
+      <div class="sub" style="margin-top:4px">Stacked usage of the spill tiers (CPU → deep tiers). NPU HBM shown separately below.</div></div>
+      <details class="explain"><summary>How this is calculated</summary><div class="body">
+        <div class="tech"><span class="lab">Technical</span> Per tier, sampled each Δ:
+          <span class="f">used_bytes = (tokens held in that tier's pool) × (KV bytes per token)</span>, stacked in order CPU → FLASH → JBOF → COLDSTORE. NPU HBM is excluded here (shown in its own panel). KV bytes/token = <span class="f">2 × kv_heads × head_dim × layers × dtype_bytes ÷ tp_size</span> (pooled tiers store the full context, so ×tp_size).</div>
+        <div class="simple"><span class="lab">In plain words</span> How much KV cache has overflowed out of GPU memory into each slower tier as the run goes. It only grows once the GPU fills up; if the GPU never fills, these stay at zero.</div>
+      </div></details></div>
   </div>
 
   <div class="grid2">
-    <div><h2>⏱️ TTFT over sim time</h2><div class="card"><div id="chartTtft"></div></div></div>
-    <div><h2>⏱️ TBT over sim time</h2><div class="card"><div id="chartTbt"></div></div></div>
+    <div><h2>⏱️ TTFT over sim time <span class="sub">(by completion)</span></h2><div class="card"><div id="chartTtft"></div></div>
+      <details class="explain"><summary>How this is calculated</summary><div class="body">
+        <div class="tech"><span class="lab">Technical</span> <span class="f">ttft = mean( r.ttft for r in every scheduler's <code>done</code> list )</span>, where
+          <span class="f">r.ttft = first_token_time − arrival</span>. Aggregated over <b>finished</b> requests only (a request enters <code>done</code> after its <b>last</b> token), so a request contributes to this line only once it has fully completed. Value in ms.</div>
+        <div class="simple"><span class="lab">In plain words</span> Average time-to-first-token — but counting only requests that have <b>completely finished</b>. Because a request isn't counted until it's done generating all its tokens, this line stays at 0 until the first request finishes, then jumps. It's the true value, just reported late.</div>
+      </div></details></div>
+    <div><h2>⏱️ TBT over sim time</h2><div class="card"><div id="chartTbt"></div></div>
+      <details class="explain"><summary>How this is calculated</summary><div class="body">
+        <div class="tech"><span class="lab">Technical</span> <span class="f">tbt = mean( r.tpot for r in <code>done</code> )</span>, where per request
+          <span class="f">tpot = (end_time − first_token_time) / (output_tokens − 1)</span> (time-per-output-token). Aggregated over finished requests; value in ms.</div>
+        <div class="simple"><span class="lab">In plain words</span> Average gap between two consecutive output tokens, for finished requests. It rises when each GPU is decoding many sequences at once and as each sequence's context grows longer.</div>
+      </div></details></div>
   </div>
 
   <div class="grid2">
-    <div><h2>🧠 Memory by tier (now)</h2><div class="card"><div id="tiers"></div></div></div>
-    <div><h2>🎯 Prefix cache</h2><div class="card"><div id="prefix"></div></div></div>
+    <div><h2>⏱️ TTFT at first-token time <span class="badge-new">NEW</span></h2><div class="card"><div id="chartTtftFt"></div></div>
+      <details class="explain" open><summary>How this is calculated</summary><div class="body">
+        <div class="tech"><span class="lab">Technical</span> For each interval (t_prev, t_now], average the TTFT of requests whose <b>first token</b> landed in that interval:
+          <span class="f">ttft_ft = mean( r.ttft for r where t_prev &lt; (r.arrival + r.ttft)/FREQ ≤ t_now )</span>, scanning requests that have started decoding (in a running batch) or finished (in <code>done</code>). Binned by <b>first-token time</b>, not completion time. Empty intervals (no new first tokens) read 0.</div>
+        <div class="simple"><span class="lab">In plain words</span> The real time-to-first-token as it actually happens, plotted at the moment each request emits its first token — so you see the true (low, flat ~200&nbsp;ms) TTFT throughout the run instead of the 0-then-jump of the "by completion" chart on the left. It drops to 0 after arrivals stop, because no new first tokens are being produced then.</div>
+      </div></details></div>
+    <div><h2>🔎 Why two TTFT charts?</h2><div class="card">
+      <div class="sub" style="line-height:1.6">Both use the <b>same</b> per-request TTFT (<span class="f">first_token − arrival</span>); they differ only in <b>when each request is plotted on the time axis</b>:
+        <ul style="margin:8px 0 0 18px;padding:0">
+          <li style="margin-bottom:6px"><b>By completion</b> (left) plots a request once it has fully <b>finished</b>. With long generations this lags a lot — the line is 0 until the first request completes, then jumps to the true value.</li>
+          <li><b>At first-token time</b> (new) plots a request the instant it produces its <b>first</b> token. This shows the true, low, flat TTFT live — no lag.</li>
+        </ul>
+        <div style="margin-top:8px">If the two disagree in <i>shape</i> but agree in <i>final value</i>, that's expected: same numbers, different x-axis placement.</div>
+      </div></div></div>
   </div>
 
   <div class="grid2">
-    <div><h2>⏱️ Latency (ms)</h2><div class="card"><div id="latency"></div></div></div>
+    <div><h2>🧠 Memory by tier (now)</h2><div class="card"><div id="tiers"></div></div>
+      <details class="explain"><summary>How this is calculated</summary><div class="body">
+        <div class="tech"><span class="lab">Technical</span> A snapshot at the current sim-time. Per tier:
+          <span class="f">used = (tokens in pool) × (KV bytes/token)</span>, <span class="f">cap = configured mem_size</span>, <span class="f">%used = used / cap</span>. NPU is per-GPU; CPU is per-node or per-instance (see <code>--cpu-scope</code>); JBOF/COLDSTORE are one pod-wide shared pool.</div>
+        <div class="simple"><span class="lab">In plain words</span> How full each memory tier is right now — GPU HBM at the top, then progressively slower/larger tiers it spills into.</div>
+      </div></details></div>
+    <div><h2>🎯 Prefix cache</h2><div class="card"><div id="prefix"></div></div>
+      <details class="explain"><summary>How this is calculated</summary><div class="body">
+        <div class="tech"><span class="lab">Technical</span> <span class="f">hit_ratio = Σ hit_tokens / Σ requested_prompt_tokens</span>. Per tier: <span class="f">hit_tokens</span> = prompt tokens served from cached KV in that tier;
+          <span class="f">reload_ms = Σ ( mem_latency + bytes/mem_bw [+ link_latency + bytes/link_bw] )</span> over reloads pulled up from that tier into the GPU.</div>
+        <div class="simple"><span class="lab">In plain words</span> How much prompt work was skipped by reusing previously-computed KV (higher hit % = less recompute), and how long it cost to pull that reused data back up from each tier. Fast tiers (JBOF) add little; slow ones (COLDSTORE) add a lot.</div>
+      </div></details></div>
+  </div>
+
+  <div class="grid2">
+    <div><h2>⏱️ Latency (ms)</h2><div class="card"><div id="latency"></div></div>
+      <details class="explain"><summary>How this is calculated</summary><div class="body">
+        <div class="tech"><span class="lab">Technical</span> Percentiles (mean/p50/p90/p99/max) over all <b>finished</b> requests, per metric:
+          <span class="f">TTFT = first_token − arrival</span>;
+          <span class="f">TBT/token = (end − first_token)/(output−1)</span>;
+          <span class="f">ITL</span> = individual inter-token gaps (every step, so its distribution is widest);
+          <span class="f">E2E = end − arrival</span>.</div>
+        <div class="simple"><span class="lab">In plain words</span> The spread of the key latencies across finished requests — typical (mean/p50) and worst-case tail (p90/p99/max). TTFT = wait for first word; TBT/ITL = pace of words after that; E2E = total time from ask to fully-answered.</div>
+      </div></details></div>
     <div><h2>🖥️ Compute drill-down
         <span class="seg">
           <button id="segTray" class="segbtn">By tray</button><button id="segInst" class="segbtn">By GPU</button>
         </span></h2>
       <div class="card"><div id="drilltab"></div>
-        <div class="sub" style="margin-top:6px">A <b>tray</b> = up to 4 GPUs (2 superchips); CPUs = distinct host-memory pools it owns.</div></div></div>
+        <div class="sub" style="margin-top:6px">A <b>tray</b> = up to 4 GPUs (2 superchips); CPUs = distinct host-memory pools it owns.</div></div>
+      <details class="explain"><summary>How this is calculated</summary><div class="body">
+        <div class="tech"><span class="lab">Technical</span> Per GPU (or aggregated per tray): current running vs waiting request counts, NPU-HBM used/cap, and tokens processed — summed from each instance's scheduler and memory model at the current snapshot.</div>
+        <div class="simple"><span class="lab">In plain words</span> A per-GPU (or per-tray) breakdown of how busy each unit is and how much of its memory is in use right now — handy for spotting imbalance.</div>
+      </div></details></div>
   </div>
 
   <div id="sessionWrap" style="display:none">
@@ -149,11 +224,21 @@
       <div class="sub" style="margin-top:6px">A resumed turn reloads the conversation's <b>parked</b> context
         from a lower tier before answering — that reload lands in its TTFT. With <b>JBOF</b> the reload is fast;
         without it the context falls to <b>COLDSTORE</b> and resumed-turn TTFT climbs. Cold first-turn has no reload.</div>
+      <details class="explain"><summary>How this is calculated</summary><div class="body">
+        <div class="tech"><span class="lab">Technical</span> Finished requests are split by <code>sub_request_index</code>: <span class="f">0 = first turn (cold)</span>, <span class="f">≥1 = resumed turn (warm)</span>. TTFT percentiles are computed for each group;
+          <span class="f">resume_overhead = resumed.mean − first.mean</span>.</div>
+        <div class="simple"><span class="lab">In plain words</span> Only shown for multi-turn/agent workloads. It compares the first-token wait on a brand-new conversation vs a paused one being resumed — the gap is the cost of reloading the parked conversation from a lower memory tier.</div>
+      </div></details>
     </div>
   </div>
 
   <h2>🖥️ NPU HBM (weight + KV, per instance)</h2>
   <div class="card"><div id="hbm"></div></div>
+  <details class="explain"><summary>How this is calculated</summary><div class="body">
+    <div class="tech"><span class="lab">Technical</span> Per GPU (per TP rank): <span class="f">used = weight_bytes/tp + KV-shard bytes</span>, <span class="f">cap = npu_mem</span>, <span class="f">%used = used/cap</span>.
+      <span class="f">weight_bytes ≈ params × dtype_bytes</span>; <span class="f">KV/token = 2 × kv_heads × head_dim × layers × dtype_bytes ÷ tp</span>; <span class="f">KV/block = KV/token × block_size</span>. A TP=N instance spans N GPUs, each holding weight/N + its KV shard.</div>
+    <div class="simple"><span class="lab">In plain words</span> How much of each GPU's memory is taken by the model weights plus its share of the KV cache. If "%used" never gets high, nothing spills to the slower tiers — which is why the KV-spill and prefix-reload panels can stay empty.</div>
+  </div></details>
 
   <div id="foot" class="foot"></div>
 </div>
@@ -358,8 +443,9 @@ async function poll(){
   const memKeys = hist.length ? Object.keys(hist[hist.length-1].mem||{}) : [];
   const spill = TIER_ORDER.filter(t=>t!=="NPU" && memKeys.includes(t));
   stackChart("chartMem", hist, spill);
-  lineChart("chartTtft", hist, [{key:"ttft",color:"var(--flash)",label:"TTFT mean (ms)"}], fmsLat);
+  lineChart("chartTtft", hist, [{key:"ttft",color:"var(--flash)",label:"TTFT mean (ms) — by completion"}], fmsLat);
   lineChart("chartTbt", hist, [{key:"tbt",color:"var(--jbof)",label:"TBT mean (ms)"}], fmsLat);
+  lineChart("chartTtftFt", hist, [{key:"ttft_ft",color:"var(--accent)",label:"TTFT @ first-token (ms)"}], fmsLat);
 
   renderTiers(d.tiers||[]);
 

@@ -324,11 +324,37 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
 
     # ---- timeline history (append this interval's point) ---------------- #
     if record_point and history is not None:
+        t_now = t_s if t_s is not None else sim_seconds
+        t_prev = history[-1]["t_s"] if history else 0.0
+        # TTFT binned by FIRST-TOKEN time (not by completion). r.ttft (ns) is set
+        # once, at the first output token, to (first_token_clock - arrival); so the
+        # first token happened at sim-time (arrival + r.ttft)/freq. Average the TTFT
+        # of every request whose first token landed in THIS interval (t_prev, t_now].
+        # A request that has produced its first token is in a running (inflight)
+        # batch or in done, and ttft >= 0; still-waiting requests have ttft == -1.
+        _ft = []
+        for s in schedulers:
+            _cands = list(getattr(s, "done", []))
+            for b in getattr(s, "inflight", []):
+                _cands.extend(getattr(b, "requests", []))
+            for r in _cands:
+                tt = getattr(r, "ttft", -1)
+                if tt is None or tt < 0:
+                    continue
+                ft_s = ((getattr(r, "arrival", 0) + tt) / freq) if freq else 0.0
+                if t_prev < ft_s <= t_now:
+                    _ft.append(tt / 1e6)   # ns -> ms
+        ttft_ft = (sum(_ft) / len(_ft)) if _ft else None
         history.append({
-            "t_s": t_s if t_s is not None else sim_seconds,
+            "t_s": t_now,
             "prompt_tps": live_prompt_tps, "decode_tps": live_gen_tps,
             "mem": {t["name"]: t["total_used_bytes"] for t in tiers},
             "ttft": latency["ttft"]["mean"], "tbt": latency["tbt"]["mean"],
+            # NEW: mean TTFT of requests whose first token was produced in this
+            # interval -> the live TTFT curve (flat/low), vs "ttft" which is the
+            # cumulative mean over only FINISHED requests (0 until the first
+            # completion, then jumps).
+            "ttft_ft": ttft_ft,
         })
     # peak + idle-robust "active" (busy-interval) throughput from the timeline.
     # total_*_tok_per_s divide by the FULL sim time (makespan) -> the standard

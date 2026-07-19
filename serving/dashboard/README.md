@@ -93,7 +93,17 @@ Point at a non-default snapshot via the sidebar or `LLMSS_DASHBOARD_FILE`.
   stay meaningful at `done` when the instantaneous rate reads 0).
 - **Over-sim-time charts** — throughput (prompt vs decode tok/s); **KV-spill
   memory** (stacked area of CPU → deep tiers, so you watch the cascade fill);
-  **TTFT** mean; **TBT** mean.
+  **TTFT (by completion)** mean; **TBT** mean; and **TTFT at first-token time**
+  (new). The two TTFT charts use the *same* per-request TTFT but differ in *when*
+  each request is plotted: "by completion" aggregates over finished requests
+  (`s.done`), so it reads 0 until the first request completes, then jumps; "at
+  first-token time" bins each request at the instant it emits its first token
+  (`arrival + ttft`), so it shows the true, live TTFT throughout the run (and
+  drops to 0 once no new first tokens are produced). A side panel explains the
+  difference in-place.
+- **Per-chart explainers** — every chart/table carries a collapsible
+  *"ℹ️ How this is calculated"* block with two views: a **Technical** one (the
+  exact formula) and an **In plain words** one (the intuition).
 - **Memory by tier (now)** — the tiered **KV cache** (not total HBM). The **NPU**
   row is KV-cache only: its capacity = per-GPU HBM **minus resident model weights**
   (so a TP=2 Qwen3-32B on 62 GiB GPUs shows ~31.5 GiB KV, not 62); the weights are
