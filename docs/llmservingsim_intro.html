@@ -1079,14 +1079,16 @@ bash scripts/compile.sh          <span class="cm"># builds the ASTRA-Sim analyti
     NPU, KV has room, and each node has a CPU.
   </div>
   <div class="box note">
-    <div class="t">Many independent instances starting slowly? <code>--parallel-instances</code></div>
-    A config with many <b>independent</b> instances (each its own model on TP GPUs, no cross-instance coupling) is
-    simulated by one ASTRA-Sim process driving all NPUs, which re-polls every idle NPU each event step — an
-    <b>O(N²) startup</b> (16 instances effectively never start). Add <code>--parallel-instances</code> (with
-    order-based routing, e.g. <code>--request-routing-policy RR</code>) to run each independent instance in its own
-    ASTRA-Sim process: 16 instances go from <b>hours → ~8&nbsp;s</b>. It engages only for strictly-independent
-    configs and is <b>approximate</b> (~0.1% timing difference — a lone instance is modeled as <code>[tp]</code> vs
-    <code>[tp,N]</code>); use single-process for the exact baseline. See the flags guide §4h.
+    <div class="t">Many instances starting slowly? <code>--parallel-instances</code></div>
+    A config with many instances is simulated by one ASTRA-Sim process driving all NPUs, which re-polls every idle
+    NPU each event step — an <b>O(N²) startup</b> (16 instances effectively never start). Add
+    <code>--parallel-instances</code> to run each instance in its own ASTRA-Sim process; 16 instances go from
+    <b>hours → seconds</b>. It has two automatic forms: <b>Mode A</b> (no prefix sharing, order-based routing) runs
+    independent instances in parallel, approximate to ~0.1%. <b>Mode B</b> (<code>--enable-prefix-sharing</code> with a
+    tier-chain <code>--prefix-storage</code>) keeps the pod-wide shared pools coupled: it merges the per-instance
+    processes by a <b>global sim-clock</b> so cross-instance <b>reuse stays exact</b>, and a Python per-channel FIFO
+    re-imposes the shared-tier <b>reload contention</b> (add <code>--parallel-no-contention</code> to A/B it). Use
+    single-process for the exact absolute-timing baseline. See the flags guide §4h.
   </div>
   <h3>Reproduce the four examples — copy &amp; paste</h3>
   <p>Run these <b>inside the container</b> (after <code>./scripts/docker-sim.sh</code> then

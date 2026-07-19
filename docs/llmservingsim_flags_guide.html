@@ -530,13 +530,17 @@ python -m serving --cluster-config configs/cluster/cross_rack_jbof.json \
   <code>run_cross_rack_demo.sh &lt;N_CTX&gt; &lt;CTX_LEN&gt;</code>.</div>
 
   <!-- ============================================================ -->
-  <h3 id="ex-parallel">4h. <code>--parallel-instances</code> — fast startup for many independent instances</h3>
-  <p>A cluster with many <b>independent</b> instances (each its own model on TP GPUs, no cross-instance coupling) is
-  normally simulated by <b>one</b> ASTRA-Sim process driving all NPUs. That process re-polls every idle NPU on every
-  event-queue step while any one instance runs an iteration, an <b>O(N²) idle "pass-storm"</b> that makes startup
-  grow quadratically — a 16-instance run effectively never starts. <code>--parallel-instances</code> runs
-  <b>each independent instance in its own ASTRA-Sim process</b> (a <code>[tp]</code> topology), so no instance polls
-  another's NPUs:</p>
+  <h3 id="ex-parallel">4h. <code>--parallel-instances</code> — fast startup for many instances</h3>
+  <p>A cluster with many instances (each its own model on TP GPUs) is normally simulated by <b>one</b> ASTRA-Sim
+  process driving all NPUs. That process re-polls every idle NPU on every event-queue step while any one instance
+  runs an iteration, an <b>O(N²) idle "pass-storm"</b> that makes startup grow quadratically — a 16-instance run
+  effectively never starts. <code>--parallel-instances</code> runs <b>each instance in its own ASTRA-Sim process</b>,
+  so no instance polls another's NPUs. It engages in one of two forms depending on whether prefix <b>sharing</b> is on:</p>
+
+  <h4 style="margin:18px 0 6px">Mode A — no prefix sharing (independent instances)</h4>
+  <p>Each independent instance runs in its own process with a <code>[tp]</code> topology, sequentially. Engages for
+  strictly-independent configs (no <code>dp_group</code> / prefill-decode / prefix-sharing / <code>pp&gt;1</code> /
+  ns3) with <b>order-based routing</b> (<code>RR</code>/<code>RAND</code>/<code>CUSTOM</code>).</p>
   <pre class="code">python -m serving --cluster-config configs/cluster/1rack_16instances.json \
   --dtype float16 --block-size 16 --enable-prefix-caching --cpu-scope per_instance \
   --max-num-seqs 2 <span class="j">--request-routing-policy RR --parallel-instances</span> \
@@ -549,14 +553,44 @@ python -m serving --cluster-config configs/cluster/cross_rack_jbof.json \
     <tr><td>8</td><td>&gt;250 s (timeout)</td><td><b>7.9 s</b></td><td>&gt;30&times;</td></tr>
     <tr><td>16</td><td>hours / never</td><td><b>8.2 s</b></td><td>huge</td></tr>
   </table>
-  <div class="box gotcha"><div class="t">When it engages, and the accuracy caveat</div>
-  It engages ONLY for strictly-independent configs (no <code>dp_group</code> / prefill-decode / prefix-sharing /
-  <code>pp&gt;1</code> / ns3 / multi-node instance) with <b>order-based routing</b> (<code>RR</code>/<code>RAND</code>/
-  <code>CUSTOM</code>); anything else silently runs single-process (so it never breaks a working config).
-  It is <b>approximate</b>: results match single-process to within <b>~0.1%</b> (e.g. TTFT differs ~0.16%). Cause:
+  <div class="box gotcha"><div class="t">Mode A accuracy caveat</div>
+  Mode A is <b>approximate</b>: results match single-process to within <b>~0.1%</b> (e.g. TTFT differs ~0.16%). Cause:
   a lone instance is modeled as a <code>[tp]</code> topology, whereas single-process models it inside the whole-cluster
-  <code>[tp,N]</code> topology; the extra traffic-free dimension slightly shifts TP-collective timing. Use it for
-  fast iteration / large-instance-count startup; use single-process when you need the exact established baseline.</div>
+  <code>[tp,N]</code> topology; the extra traffic-free dimension slightly shifts TP-collective timing.</div>
+
+  <h4 style="margin:18px 0 6px">Mode B — with prefix sharing (shared pools + cross-instance reuse &amp; contention)</h4>
+  <p>When you add <code>--enable-prefix-sharing</code> with a tier-chain pool
+  (<code>--prefix-storage CPU|FLASH|JBOF|COLDSTORE</code>), the instances are <b>not</b> independent — they share the
+  pod-wide prefix pools, so one instance's evicted context can be <b>reused</b> by another (see §4g). Mode B keeps that
+  coupling exact while still removing the O(N²) storm: it runs each instance in its own process but multiplexes them
+  through a single Python driver that merges their reports by a <b>global sim-clock min-heap</b>. Because the shared
+  RadixCache pools receive match / insert / evict in the same global-time order single-process would use,
+  <b>cross-instance reuse is exact</b>. A Python <b>per-channel reload-contention engine</b> then re-imposes the
+  shared-tier FIFO (the pod-wide deep tier is reached through one per-rack BlueField channel,
+  <code>device_id = node_id</code>): instances on the same rack that reload from the same channel at the same sim-time
+  serialize, exactly as the single, shared <code>MEMORY_POOL</code> would.</p>
+  <pre class="code">python -m serving --cluster-config configs/cluster/cross_rack_jbof.json \
+  --dtype float16 --block-size 16 --enable-prefix-caching <span class="j">--enable-prefix-sharing</span> \
+  --tier-policy exclusive --cpu-scope per_node --request-routing-policy CUSTOM --max-num-seqs 1 \
+  <span class="j">--prefix-storage JBOF --parallel-instances</span> \
+  --dataset workloads/cross_rack_demo.jsonl --output outputs/cross_rack_jbof.csv
+<span class="cm"># add --parallel-no-contention to disable the contention engine (Stage-1 timing only)</span></pre>
+  <table>
+    <tr><th>property</th><th>vs single-process</th></tr>
+    <tr><td>cross-rack reuse (producer)</td><td><b>byte-identical</b> TTFT</td></tr>
+    <tr><td>cross-rack reuse (reuser)</td><td>within <b>~0.4 ms</b> (the same ~0.1% Mode-A topology baseline, not a reuse error)</td></tr>
+    <tr><td>same-rack contention (4 instances / 1 channel)</td><td>captures <b>10.4 ms of the 10.8 ms</b> the FIFO adds (mean TTFT gap <b>+0.4%</b>; disabling it under-counts by +13%)</td></tr>
+    <tr><td>same-rack contention (8 instances / 1 channel)</td><td>mean TTFT gap <b>+0.3%</b> (disabling it under-counts by <b>+30%</b>)</td></tr>
+    <tr><td>16 instances &times; tp2 = 32 NPUs</td><td>runs end-to-end in minutes; single-process hangs in the pass-storm</td></tr>
+  </table>
+  <div class="box gotcha"><div class="t">Mode B: what's exact, what's approximate</div>
+  <b>Reuse is exact</b> (shared pools driven in global-clock order). Absolute timing carries the same ~0.1–0.4%
+  parallel baseline as Mode A ([tp] vs [tp,N] topology). The <b>contention engine</b> is a first-order, batch-granular
+  per-channel FIFO: it reproduces the N-way serialization on a shared per-rack channel to within ~0.5% on the tests
+  above, and is a <b>no-op</b> for one-instance-per-node configs (each rack has its own channel). It is <b>on by
+  default</b> in Mode B; use <code>--parallel-no-contention</code> to A/B its effect. Mode A vs Mode B is chosen
+  automatically from whether <code>--enable-prefix-sharing</code> is set — you always just pass
+  <code>--parallel-instances</code>.</div>
 
   <!-- ============================================================ -->
   <h2 id="showcase">5. Realistic sharegpt showcase</h2>

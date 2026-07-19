@@ -1,0 +1,282 @@
+{
+  "num_nodes": 1,
+  "link_bw": 1800,
+  "link_latency": 1000,
+  "jbof_mem": {
+    "mem_size": 512,
+    "mem_bw": 64,
+    "mem_latency": 80000,
+    "link_bw": 100,
+    "link_latency": 2000
+  },
+  "coldstore_mem": {
+    "mem_size": 4096,
+    "mem_bw": 4,
+    "mem_latency": 2000000,
+    "link_bw": 16,
+    "link_latency": 20000
+  },
+  "nodes": [
+    {
+      "num_instances": 16,
+      "instances": [
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        },
+        {
+          "model_name": "meta-llama/Llama-3.1-8B",
+          "hardware": "RTXPRO6000",
+          "npu_mem": {
+            "mem_size": 96,
+            "mem_bw": 22000,
+            "mem_latency": 10
+          },
+          "tp_size": 2,
+          "cpu_mem": {
+            "mem_size": 8,
+            "mem_bw": 1200,
+            "mem_latency": 120
+          },
+          "pd_type": null
+        }
+      ]
+    }
+  ]
+}

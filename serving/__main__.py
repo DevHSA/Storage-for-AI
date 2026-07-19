@@ -208,14 +208,21 @@ def main():
                         help='request routing policy across instances: LOAD (vLLM-style weighted least-loaded, default), '
                         'RR (round-robin), RAND (random), CUSTOM (user-defined)')
     parser.add_argument('--parallel-instances', action='store_true',
-                        help='OPT-IN speedup for many INDEPENDENT instances: run each instance in its own '
-                        'ASTRA-Sim process (topology [tp_size]) instead of one process for all NPUs, removing the '
-                        'O(N^2) cross-instance idle-poll storm. Only takes effect for strictly-independent configs '
-                        '(no dp_group / prefill-decode / prefix-sharing / pp>1 / ns3 / multi-node instance) with '
-                        'order-based routing (RR/RAND/CUSTOM); otherwise it silently falls back to single-process. '
-                        'APPROXIMATE: results match single-process to within ~0.1%% (a lone instance is modeled as a '
-                        '[tp] topology vs [tp,N] when co-resident; the extra traffic-free dimension slightly shifts '
-                        'TP-collective timing) -- not byte-identical. Use for fast startup at many instances.')
+                        help='OPT-IN speedup for many instances: run each instance in its own ASTRA-Sim process '
+                        'instead of one process for all NPUs, removing the O(N^2) cross-instance idle-poll storm. '
+                        'Two engaged forms: Mode A (no prefix sharing; order-based routing) runs instances '
+                        'sequentially with [tp] topology; Mode B (--enable-prefix-sharing with '
+                        '--prefix-storage CPU|FLASH|JBOF|COLDSTORE) runs the per-instance processes multiplexed by a '
+                        'global sim-clock min-heap over the SHARED Python prefix pools, so cross-instance prefix '
+                        'REUSE is applied in the same order as single-process and a Python per-channel FIFO re-imposes '
+                        'the shared-tier reload CONTENTION. Only takes effect for otherwise-independent configs '
+                        '(no dp_group / prefill-decode / pp>1 / ns3); else it silently falls back to single-process. '
+                        'APPROXIMATE (not byte-identical): Mode A ~0.1%% from [tp] vs [tp,N] topology; Mode B keeps '
+                        'reuse exact but idle-gap timing and the batch-granular contention model are first-order.')
+    parser.add_argument('--parallel-no-contention', action='store_true',
+                        help='Mode B only: disable the Python per-channel reload-contention engine (Stage 1 only), so '
+                        'each instance times its deep-tier reloads uncontended. Useful for A/B-ing the contention '
+                        'effect or for configs with one instance per node (where it is a no-op anyway).')
     parser.add_argument('--expert-routing-policy', type=str,
                         choices=['BALANCED', 'RR', 'RAND', 'CUSTOM'],
                         default='BALANCED',
@@ -786,10 +793,36 @@ def main():
         and all(inst.get('pd_type') is None for inst in instances)
         and all(int(inst.get('pp_size', 1) or 1) == 1 for inst in instances)
     )
-    if args.parallel_instances and not multi:
+    # ===== OPT-IN multi-process Mode B (shared-pool): one ASTRA-Sim process per =====
+    # independent instance, all multiplexed by a min-heap on next-report sim-clock so
+    # cross-instance prefix REUSE (the shared RadixCache tier pools) is applied in the
+    # SAME global sim-time order as single-process -- reuse stays exact -- while the
+    # O(N^2) idle-poll storm is removed. Enabled ONLY when prefix SHARING is on with a
+    # tier-chain pool (CPU/FLASH/JBOF/COLDSTORE) and the instances are otherwise
+    # strictly independent (no dp_group / pd_type / pp>1 / ns3). Routing is NOT
+    # restricted (LOAD allowed); assignment is exact for order-based policies and
+    # approximate only at exact-tie clocks under LOAD.
+    multi_b = bool(
+        args.parallel_instances
+        and not multi
+        and enable_prefix_sharing
+        and storage_medium == 'CPU'
+        and network_backend != 'ns3'
+        and num_instances > 1
+        and all(inst.get('dp_group') is None for inst in instances)
+        and all(inst.get('pd_type') is None for inst in instances)
+        and all(int(inst.get('pp_size', 1) or 1) == 1 for inst in instances)
+    )
+    # Capture Mode B's Stage-2 contention toggle NOW: `args` is reassigned to the
+    # subprocess arg LIST further below, so the argparse namespace is gone by the
+    # time run_parallel_shared() runs.
+    modeb_contention = multi_b and not bool(args.parallel_no_contention)
+    if args.parallel_instances and not multi and not multi_b:
         print_markup("[sim.time]--parallel-instances ignored: needs an independent config "
-                     "(no dp_group / pd_type / pp>1 / prefix-sharing / ns3) with RR/RAND/CUSTOM "
-                     "routing; running single-process.[/]")
+                     "(no dp_group / pd_type / pp>1 / ns3). Use RR/RAND/CUSTOM routing for the "
+                     "no-sharing fast path (Mode A), or --enable-prefix-sharing with "
+                     "--prefix-storage CPU|FLASH|JBOF|COLDSTORE for the shared-pool fast path "
+                     "(Mode B); running single-process.[/]")
 
     # Set Event Handler that loop with INTERVAL time until first request arrive (for all instances)
     first_arival_time = router.get_first_arrival_time()
@@ -810,7 +843,7 @@ def main():
         args.append("--end-npu-ids="+end_npu_ids)
     if network_backend == 'ns3':
         args.append("--logical-topology-configuration="+astra_sim+"/inputs/logical_topology/logical_8nodes_1D.json")
-    p = None if multi else subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    p = None if (multi or multi_b) else subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 
     # DP group synchronization: defer trace generation until all members have scheduled
     # dp_groups maps dp_group_name -> list of instance_ids
@@ -911,14 +944,222 @@ def main():
                 except Exception: pass
         return max_current
 
+    # ---- OPT-IN Mode B driver: shared-pool, global-clock min-heap merge ----
+    def run_parallel_shared():
+        """Drive each independent instance in its OWN ASTRA-Sim process, but multiplex
+        them by a min-heap keyed on the next-report sim-clock so the shared Python
+        RadixCache tier pools (CPU/FLASH/JBOF/COLDSTORE) receive match/insert/evict in
+        the SAME global sim-time order as single-process. Cross-instance prefix REUSE
+        therefore stays exact while the O(N^2) cross-instance idle-poll storm is gone.
+
+        Stage 1 (B-min): each child times its own reloads with no cross-instance
+        channel contention (per-instance process). Stage 2 layers a Python per-channel
+        reload-contention coordinator on top to re-impose the shared-pool FIFO."""
+        import heapq
+        nonlocal total_prompt, total_gen, req_cnt, prompt_th, gen_th, last_log
+        per = build_per_instance_inputs(cluster, astra_sim)
+        ev_time = int(event_time)
+        proc = [None] * num_instances
+        ctrl = [None] * num_instances
+        base_of = [per[i]["base"] for i in range(num_instances)]
+        tp_of = [instances[i]["num_npus"] for i in range(num_instances)]
+        need_of = [1 if tp_of[i] == 1 else 2 for i in range(num_instances)]
+        inst_root_of = [os.path.join(run_paths.inputs_root, f"inst{i}") for i in range(num_instances)]
+        done_npus = [[] for _ in range(num_instances)]
+        max_current = 0
+        heap = []  # (effective_clock, global_npu_id, instance_i, local_sys, iter_id)
+
+        # ---- Stage 2: per-shared-channel reload-contention FIFO ----
+        # Each instance runs in its OWN ASTRA-Sim process, so its C++ MEMORY_POOL
+        # only serializes ITS OWN reloads; cross-instance reloads that share a
+        # physical channel (a per-rack deep-tier BlueField channel, device_id =
+        # node_id) never see each other. We re-impose that FIFO in Python: a batch's
+        # deep-tier reload waits until the channel it targets is free, and that wait
+        # is added to the instance's clock via ``offset[i]`` so every downstream
+        # report (hence its TTFT) reflects the contention -- exactly what the single,
+        # shared MEMORY_POOL would have charged. ``chan_free`` holds effective ns.
+        offset = [0] * num_instances           # accumulated contention delay (ns) per instance
+        chan_free = {}                         # (tier_name, device_id) -> effective ns channel next free
+        charged = set()                        # batch ids already FIFO-charged (once per reload batch)
+
+        def _read_report(i):
+            # Mirror the single-process read: drain to "Waiting", parse the report
+            # line; skip non-report blocks (never blocks -- the child only pauses
+            # after emitting a report + "Waiting").
+            while True:
+                out = ctrl[i].read_wait(proc[i])
+                od = ctrl[i].parse_output(out[-2])
+                if od is not None:
+                    return od
+
+        def _push_next(i):
+            # Push the EFFECTIVE clock (raw child cycle + accumulated contention
+            # offset) so the global min-heap orders instances by contention-adjusted
+            # sim-time -- the same timeline single-process would produce.
+            od = _read_report(i)
+            heapq.heappush(heap, (od["cycle"] + offset[i], base_of[i] + od["sys"], i, od["sys"], od["id"]))
+
+        # ---- bootstrap: spawn every child + read its first (warmup) report ----
+        for i in range(num_instances):
+            inst = instances[i]; tpn = tp_of[i]; inst_root = inst_root_of[i]
+            generate_event(ev_time, inputs_root=inst_root)
+            generate_graph(None, None, tpn, event=True, inputs_root=inst_root)
+            ev_wl = get_workload(None, None, event=True, inputs_root=inst_root)
+            a = [binary, "--workload-configuration=" + ev_wl,
+                 "--system-configuration=" + per[i]["system"],
+                 "--network-configuration=" + per[i]["network"],
+                 "--memory-configuration=" + per[i]["memory"],
+                 "--start-npu-ids=" + per[i]["start_ids"]]
+            if per[i]["end_ids"]:
+                a.append("--end-npu-ids=" + per[i]["end_ids"])
+            proc[i] = subprocess.Popen(a, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, universal_newlines=True)
+            ctrl[i] = Controller(tpn)
+            _push_next(i)
+
+        # ---- global-clock merge loop ----
+        while heap:
+            cur, _gid, i, sys_l, iter_id = heapq.heappop(heap)
+            if cur > max_current:
+                max_current = cur
+            # Route newly-arrived requests as of this sim-time frontier. cur is
+            # non-decreasing across pops (each popped entry is replaced by a strictly
+            # later report from the same child), so this matches single-process's
+            # monotonic route_arrived_requests(current).
+            if dataset is not None:
+                router.route_arrived_requests(cur)
+            inst = instances[i]; inst_cfg = instance_runtime_configs[i]
+            nid = inst2node_mapping[i]; tpn = tp_of[i]; inst_root = inst_root_of[i]
+            sys_g = base_of[i] + sys_l
+            prompt_t, gen_t, finished = schedulers[i].add_done(iter_id, sys_g, cur)
+            prompt_th += prompt_t; total_prompt += prompt_t
+            gen_th += gen_t; total_gen += gen_t
+            req_cnt += len(finished)
+            for req in finished:
+                router.notify_request_completed(req.id, cur)
+            new_req = schedulers[i].schedule(cur, sys_g, iter_id)
+            if new_req is not None:
+                # Stage 2: charge cross-instance contention for this batch's deep-tier
+                # reloads on their shared per-rack channel(s). `cur` is the effective
+                # (contention-adjusted) issue clock; the batch waits for the busiest
+                # channel it targets, and that wait delays every later report of this
+                # instance via offset[i]. Guard by (instance, batch_id): batch_id is a
+                # PER-SCHEDULER counter, so instances reuse the same ids -- keying on the
+                # bare id would let one instance's charge suppress another's identical id
+                # (and a tp>1 batch is still charged once, seen per NPU report).
+                bkey = (i, new_req.batch_id)
+                if (modeb_contention and getattr(new_req, "tier_loads", None)
+                        and bkey not in charged):
+                    charged.add(bkey)
+                    chan_dur = {}
+                    for tname, b, device_id in new_req.tier_loads:
+                        if b <= 0:
+                            continue
+                        dev = _NAME_TO_DEVICE.get(tname)
+                        base = schedulers[i].memory.tier_load_latency_ns(dev, b) if dev is not None else 0
+                        key = (tname, device_id)
+                        chan_dur[key] = chan_dur.get(key, 0.0) + base
+                    batch_wait = 0.0
+                    for key, dur in chan_dur.items():
+                        start = max(cur, chan_free.get(key, 0.0))
+                        if start - cur > batch_wait:
+                            batch_wait = start - cur
+                        chan_free[key] = start + dur
+                    if batch_wait > 0:
+                        offset[i] += int(batch_wait)
+                if sys_l == 0:   # start NPU of this instance: emit this batch's ET
+                    generate_trace(new_req, inst["hardware"], inst["tp_size"], inst["pp_size"],
+                                   inst["local_ep"], inst["ep_total"], inst["pd_type"], nid, i,
+                                   inst_cfg["max_num_batched_tokens"], inst_cfg["max_num_seqs"],
+                                   placement[i], block_mode_on[i], expert_routing_policy,
+                                   inst_cfg["enable_prefix_caching"], inst_cfg["enable_attn_offloading"],
+                                   power_model, pim_models[nid], inst_cfg["enable_sub_batch_interleaving"],
+                                   inst_cfg["fp"], dtype=inst_cfg["dtype"], kv_cache_dtype=inst_cfg["kv_cache_dtype"],
+                                   tp_dim=inst["tp_dim"], ep_dim=inst["ep_dim"],
+                                   enable_block_copy=inst_cfg["enable_block_copy"], inputs_root=inst_root)
+                    generate_graph(new_req, inst["hardware"], tpn, nid, i, 0,
+                                   inst_cfg["enable_local_offloading"], inputs_root=inst_root)
+                workload = get_workload(new_req, inst["hardware"], i, inputs_root=inst_root)
+                ctrl[i].write_flush(proc[i], workload)
+                _push_next(i)
+            elif (schedulers[i].is_request_empty()
+                  and not router.has_pending_requests()
+                  and not router.has_deferred_sessions()):
+                # This instance is drained AND the router has nothing left to route
+                # anywhere -> no future batch can land on instance i. Retire its child.
+                if sys_l not in done_npus[i]:
+                    done_npus[i].append(sys_l)
+                if len(done_npus[i]) >= need_of[i]:
+                    try:
+                        schedulers[i].memory.free_prefix_cache(); schedulers[i].memory.free_weight()
+                    except Exception:
+                        pass
+                    ctrl[i].write_flush(proc[i], "exit")
+                    try: ctrl[i].check_end(proc[i])
+                    except Exception: pass
+                    try:
+                        proc[i].stdin.close(); proc[i].wait(timeout=15)
+                    except Exception:
+                        try: proc[i].kill()
+                        except Exception: pass
+                    # do NOT re-push child i (retired)
+                else:
+                    ctrl[i].write_flush(proc[i], "done")  # sleep this NPU, await the peer
+                    _push_next(i)
+            else:
+                # Idle but not globally drained. Send "pass" (NO workload, so the
+                # child re-reports the SAME iteration -> its iteration counter stays
+                # aligned with the scheduler; adding an event graph here would insert
+                # a phantom iteration and desync add_done/schedule). Then FAST-FORWARD
+                # the effective clock to the next pending arrival by absorbing the idle
+                # gap into offset[i]. This lands every instance waiting on the same
+                # arrival on ONE clock (so their reloads collide on the shared channel
+                # in NPU-id order -> the single, shared MEMORY_POOL FIFO) and skips
+                # INTERVAL-stepping across long idle gaps -- all without touching the
+                # child's raw clock (offset compensates when its next batch reports).
+                ctrl[i].write_flush(proc[i], "pass")
+                od = _read_report(i)          # same iteration, raw advanced ~INTERVAL
+                raw2 = od["cycle"]
+                eff = raw2 + offset[i]
+                nxt = router.get_next_pending_arrival() if dataset is not None else None
+                if nxt is not None and nxt > eff:
+                    offset[i] = nxt - raw2    # re-anchor: effective clock jumps to nxt
+                    eff = nxt
+                heapq.heappush(heap, (eff, base_of[i] + od["sys"], i, od["sys"], od["id"]))
+
+            # throughput timeline sampling on the global clock (peak/active metric + dash)
+            if cur > last_log + INTERVAL:
+                _lp = prompt_th * RATIO; _lg = gen_th * RATIO
+                throughput.append((_lp, _lg))
+                last_log += INTERVAL
+                prompt_th = 0; gen_th = 0
+                if dash_enabled:
+                    try:
+                        dashboard.write_snapshot(dash_write_path, dashboard.build_snapshot(
+                            "running", clock_ns=cur, freq=FREQ, wall_seconds=time() - start_time,
+                            config=dash_config, cpu_scope=cpu_scope, req_cnt=req_cnt,
+                            total_prompt=total_prompt, total_gen=total_gen,
+                            requests_total=len(getattr(router, "_pending_requests", [])),
+                            schedulers=schedulers, num_nodes=num_nodes, num_instances=num_instances,
+                            history=dash_history, t_s=last_log / FREQ, record_point=True,
+                            live_prompt_tps=_lp, live_gen_tps=_lg))
+                    except Exception:
+                        pass
+        return max_current
+
     if multi:
         print_markup(f"[sim.tagline]Parallel-instances mode: {num_instances} independent ASTRA-Sim processes[/]")
         print_markup("[sim.time]  (approximate: ~0.1% timing difference vs single-process from per-instance [tp] topology)[/]")
         current = run_parallel_instances()
+    elif multi_b:
+        print_markup(f"[sim.tagline]Parallel-instances mode B: {num_instances} ASTRA-Sim processes + shared prefix pools[/]")
+        _ct = "on (per-channel FIFO)" if modeb_contention else "off (Stage 1 only)"
+        print_markup(f"[sim.time]  (cross-instance reuse applied in global sim-time order; reload contention: {_ct})[/]")
+        current = run_parallel_shared()
 
     # ----------------------------------- Start simulation loop ------------------------------------
     # Starting simulation, one while loop processes one iteration
-    while not multi:
+    while not multi and not multi_b:
 
         out = controller.read_wait(p)
         out_dict = controller.parse_output(out[-2])
@@ -1360,8 +1601,8 @@ def main():
     minutes, seconds = divmod(remainder, 60)
 
     # check all scheduled requests in astra-sim are well done (single-process only;
-    # the multi-process driver already check_end'd each per-instance process)
-    if not multi:
+    # the multi-process drivers already check_end'd each per-instance process)
+    if not multi and not multi_b:
         controller.check_end(p)
 
     # calculate prefix caching metrics (per tier: NPU -> CPU/CXL -> deep tiers)
