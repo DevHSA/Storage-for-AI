@@ -125,6 +125,18 @@
   <div class="progress"><div id="progbar" style="width:0%"></div></div>
   <div id="progtext" class="sub" style="margin-top:6px"></div>
 
+  <h2 style="margin-top:18px">🔻 Request lifecycle</h2>
+  <div class="card"><div id="funnel"></div>
+    <details class="explain"><summary>How this is calculated</summary><div class="body">
+      <div class="tech"><span class="lab">Technical</span> Cumulative funnel over all routed requests (each is in exactly one of waiting / running / done). Persistent per-request flags:
+        <span class="f">arrived = arrival ≤ clock</span>;
+        <span class="f">started = queuing_delay ≥ 0</span> (set once when the first prefill chunk is admitted, scheduler.set_que_delay);
+        <span class="f">decoding = ttft ≥ 0</span> (first output token produced);
+        <span class="f">finished = in scheduler.done</span>. They nest: arrived ≥ started ≥ decoding ≥ finished.</div>
+      <div class="simple"><span class="lab">In plain words</span> The stages of a request's life: it <b>arrives</b>, then <b>starts</b> being served (prefill begins), then <b>enters decode</b> (first word out), then <b>finishes</b> (last word out). Each bar is how many requests have reached that stage so far — the gaps between bars are requests currently stuck at each stage (queued, prefilling, or mid-generation).</div>
+    </div></details>
+  </div>
+
   <div id="avgthru"></div>
 
   <div id="tiles" class="tiles"></div>
@@ -395,6 +407,21 @@ async function poll(){
   const pct = tot? Math.min(100,100*done/tot) : (status==="done"?100:0);
   $("progbar").style.width=pct+"%";
   $("progtext").textContent=`Requests finished ${fi(done)} / ${fi(tot)}`;
+
+  // ---- request lifecycle funnel: arrived -> started -> decoding -> finished ---- //
+  const _funnelStages=[
+    ["Arrived",             ct.requests_arrived,  "var(--cpu)"],
+    ["Started (prefill)",   ct.requests_started,  "var(--flash)"],
+    ["Decoding (1st token)",ct.requests_decoding, "var(--jbof)"],
+    ["Finished",            ct.requests_finished, "#3fb950"],
+  ];
+  $("funnel").innerHTML=`<div class="devs">`+_funnelStages.map(([nm,v,c])=>{
+    v=+v||0; const p=tot?Math.min(100,100*v/tot):0;
+    return `<div class="dev" style="grid-template-columns:170px 1fr 170px;align-items:center">
+      <span class="sub" style="color:var(--txt)">${nm}</span>
+      <div class="bar"><div style="width:${p.toFixed(1)}%;background:${c}"></div></div>
+      <span class="amt" style="text-align:right">${fi(v)} / ${fi(tot)} <span class="sub">(${p.toFixed(1)}%)</span></span>
+    </div>`;}).join("")+`</div>`;
 
   // live/peak tok/s: live reads 0 at done, so fall back to the last timeline point.
   const hist=thr.history||[];

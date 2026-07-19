@@ -169,9 +169,38 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
     waiting = _safe_call(lambda: sum(
         len([r for r in s.request if r.arrival <= clock_ns]) for s in schedulers), 0)
     batches = _safe_call(lambda: sum(max(0, s.batch_ids + 1) for s in schedulers), 0)
+
+    # Request lifecycle funnel (CUMULATIVE counts). Each routed request sits in
+    # exactly one of waiting (s.request) / running (s.inflight) / finished
+    # (s.done); persistent per-request flags mark how far it has progressed:
+    #   arrival <= clock   -> arrived (entered the system)
+    #   queuing_delay >= 0 -> started serving (first prefill chunk admitted; set
+    #                         once in scheduler.set_que_delay)
+    #   ttft >= 0          -> entered decode (first output token produced)
+    #   in s.done          -> finished (all tokens produced; == requests_finished)
+    # These nest: arrived >= started >= decoding >= finished.
+    def _funnel():
+        arrived = started = decoding = 0
+        for s in schedulers:
+            groups = [s.request, s.done]
+            for b in s.inflight:
+                groups.append(b.requests)
+            for grp in groups:
+                for r in grp:
+                    if getattr(r, "arrival", 1 << 62) <= clock_ns:
+                        arrived += 1
+                    if getattr(r, "queuing_delay", -1) >= 0:
+                        started += 1
+                    if getattr(r, "ttft", -1) >= 0:
+                        decoding += 1
+        return arrived, started, decoding
+    arrived, started, decoding = _safe_call(_funnel, (0, 0, 0))
+
     counters = {
         "requests_total": requests_total, "requests_finished": req_cnt,
         "requests_running": running, "requests_waiting": waiting,
+        "requests_arrived": arrived, "requests_started": started,
+        "requests_decoding": decoding,
         "prompt_tokens": total_prompt, "decode_tokens": total_gen,
         "total_tokens": total_prompt + total_gen, "batches": batches,
     }

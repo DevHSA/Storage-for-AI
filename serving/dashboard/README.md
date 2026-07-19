@@ -91,6 +91,12 @@ Point at a non-default snapshot via the sidebar or `LLMSS_DASHBOARD_FILE`.
 - **Tiles** — requests finished/running/waiting; prompt / decode / total tokens;
   batches; req/s; decode & prompt tok/s (cumulative + **last / peak**, so they
   stay meaningful at `done` when the instantaneous rate reads 0).
+- **Request lifecycle funnel** — cumulative bars for the stages a request passes
+  through: **arrived** (`arrival ≤ clock`) → **started** (prefill admitted,
+  `queuing_delay ≥ 0`) → **decoding** (first token out, `ttft ≥ 0`) →
+  **finished** (in `scheduler.done`). They nest (arrived ≥ started ≥ decoding ≥
+  finished); the gaps between bars are requests currently queued, prefilling, or
+  mid-generation.
 - **Over-sim-time charts** — throughput (prompt vs decode tok/s); **KV-spill
   memory** (stacked area of CPU → deep tiers, so you watch the cascade fill);
   **TTFT (by completion)** mean; **TBT** mean; and **TTFT at first-token time**
