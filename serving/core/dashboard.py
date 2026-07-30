@@ -379,6 +379,8 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
             "prompt_tps": live_prompt_tps, "decode_tps": live_gen_tps,
             "mem": {t["name"]: t["total_used_bytes"] for t in tiers},
             "ttft": latency["ttft"]["mean"], "tbt": latency["tbt"]["mean"],
+            "ttft_p90": latency["ttft"]["p90"],  # cumulative p90 TTFT (ms) over finished requests
+            "e2e": latency["e2e"]["mean"],   # cumulative mean end-to-end latency (ms)
             # NEW: mean TTFT of requests whose first token was produced in this
             # interval -> the live TTFT curve (flat/low), vs "ttft" which is the
             # cumulative mean over only FINISHED requests (0 until the first
@@ -404,13 +406,70 @@ def build_snapshot(status, *, clock_ns, freq, wall_seconds, config, cpu_scope,
         "history": list(history or []),
     }
 
+    # ---- simulation-timeline milestones (V2 dashboard timeline bar) --------
+    # Each entry is the sim-time (seconds) at which a milestone FIRST occurred.
+    # Tier/throughput milestones are read off the per-interval history; request
+    # milestones from scheduler state. Milestones that have not happened yet are
+    # omitted, so the timeline only marks real events. Additive + cheap (older
+    # dashboards simply ignore the field).
+    def _first_hist_ts(pred):
+        for p in (history or []):
+            try:
+                if pred(p):
+                    return p.get("t_s")
+            except Exception:
+                pass
+        return None
+    def _hmem(p, name):
+        return (p.get("mem") or {}).get(name, 0) or 0
+    _npu_cap = next((t.get("total_cap_bytes", 0) for t in tiers if t.get("name") == "NPU"), 0)
+    _arr, _ends, _fts = [], [], []   # arrivals, completion times, first-token times (all ns)
+    def _collect(r, has_first_token):
+        a = getattr(r, "arrival", None)
+        if a is not None:
+            _arr.append(a)
+            if has_first_token:
+                tt = getattr(r, "ttft", -1)
+                if tt is not None and tt >= 0:
+                    _fts.append(a + tt)   # first-token sim-time = arrival + ttft
+    try:
+        for s in schedulers:
+            for r in s.done:
+                _collect(r, True)
+                e = getattr(r, "end_time", -1)
+                if e is not None and e >= 0:
+                    _ends.append(e)
+            for b in s.inflight:
+                for r in b.requests:
+                    _collect(r, True)
+            for r in s.request:
+                _collect(r, False)
+    except Exception:
+        pass
+    events = []
+    def _ev(key, t):
+        if t is not None:
+            events.append({"key": key, "t_s": round(float(t), 2)})
+    if _arr and freq:
+        _ev("first_arrival", min(_arr) / freq)
+        _ev("arrivals_complete", max(_arr) / freq)
+    if _fts and freq:
+        _ev("first_token", min(_fts) / freq)
+    if _ends and freq:
+        _ev("first_finish", min(_ends) / freq)
+    _ev("cpu_spill", _first_hist_ts(lambda p: _hmem(p, "CPU") > 0))
+    _ev("jbof_spill", _first_hist_ts(lambda p: _hmem(p, "JBOF") > 0))
+    _ev("coldstore_spill", _first_hist_ts(lambda p: _hmem(p, "COLDSTORE") > 0))
+    if status == "done":
+        _ev("run_complete", sim_seconds)
+
     return {
         "schema": 2, "status": status, "wall_seconds": round(wall_seconds, 3),
         "sim": {"clock_ns": clock_ns, "sim_seconds": sim_seconds},
         "config": config, "counters": counters, "throughput": thr,
         "tiers": tiers, "trays": trays_info, "instances": instances_info, "npu_hbm": npu_hbm,
         "prefix_cache": prefix_cache, "latency": latency, "sessions": sessions,
-        "kv_unit": kv_unit,
+        "kv_unit": kv_unit, "events": events,
     }
 
 

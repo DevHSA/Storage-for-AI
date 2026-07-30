@@ -8,6 +8,13 @@ GB_TO_BYTE = 1024 * 1024 * 1024
 MB_TO_BYTE = 1024 * 1024
 KB_TO_BYTE = 1024
 
+# Debug-only spill tracer (zero cost when off). Set LLMSS_TRACE_SPILL=1 to log
+# exactly where each evicted/parked prefix lands: NPU->CPU, CPU->deeper, park, drop.
+_TRACE_SPILL = bool(os.getenv("LLMSS_TRACE_SPILL"))
+def _tspill(msg):
+    if _TRACE_SPILL:
+        print(f"[SPILL] {msg}", flush=True)
+
 class Device(Enum):
     NPU = 1
     CPU = 2
@@ -429,10 +436,14 @@ class MemoryModel():
 
     def storage_cache_evicted_req(self, req):
         if self.enable_prefix_caching:
+            _before = self.second_tier_prefix_cache.total_size()
             new_last_node = self.second_tier_prefix_cache.cache_unfinished_req(req, update=False) # do not update hit counts
             # should lock evicted kv cache in cpu
             self.second_tier_prefix_cache.inc_lock_ref(new_last_node)
             req.cpu_last_node = new_last_node
+            _tspill(f"inst={self.instance_id} PARK req={getattr(req,'id','?')} -> CPU(second_tier) "
+                    f"LOCKED (+{self.second_tier_prefix_cache.total_size()-_before} tok, CPU now={self.second_tier_prefix_cache.total_size()} tok) "
+                    f"policy={self.tier_policy}")
             if self.tier_policy == 'exclusive':
                 # Cascading: this evicted prefix is LOCKED in CPU, so it will not
                 # cascade until it is unlocked and later evicted. Just rebalance.
@@ -655,6 +666,8 @@ class MemoryModel():
         cpu = self._spill_chain[0]
         cap_tok = (cpu.capacity // cpu.kv_size) if cpu.kv_size else 0
         evicted = self.npu_prefix_cache.evict_and_collect(tokens)  # full-prefix token seqs
+        _tspill(f"inst={self.instance_id} _evict_npu: evicted {len(evicted)} prefix(es) from NPU; "
+                f"CPU cap_tok={cap_tok}, CPU now={cpu.total_size()} tok")
         for seq in evicted:
             if not seq:
                 continue
@@ -665,6 +678,11 @@ class MemoryModel():
             # Demote only if it now fits; else drop (CPU saturated with locks).
             if cpu.total_size() + len(seq) <= cap_tok:
                 cpu.insert(seq)
+                _tspill(f"inst={self.instance_id}   -> DEMOTE {len(seq)} tok into CPU "
+                        f"(CPU now={cpu.total_size()}/{cap_tok} tok)")
+            else:
+                _tspill(f"inst={self.instance_id}   -> DROP {len(seq)} tok (did not fit CPU "
+                        f"cap_tok={cap_tok}; recomputable) -- never reaches CPU")
 
     def _evict_tier(self, idx, tokens):
         """Evict ~``tokens`` tokens from spill-chain[idx] and CASCADE them into
@@ -677,15 +695,21 @@ class MemoryModel():
         if idx + 1 < len(chain):
             evicted = cache.evict_and_collect(tokens)   # full-prefix token seqs
             nxt = chain[idx + 1]
+            _moved = 0
             for seq in evicted:
                 if seq:
                     nxt.insert(seq)                      # push one level deeper
+                    _moved += len(seq)
+            _tspill(f"inst={self.instance_id}   -> CASCADE tier[{idx}]->tier[{idx+1}] "
+                    f"({getattr(cache,'device','?')}->{getattr(nxt,'device','?')}) {_moved} tok")
             cap_tok = (nxt.capacity // nxt.kv_size) if nxt.kv_size else 0
             over = nxt.total_size() - cap_tok
             if over > 0:
                 self._evict_tier(idx + 1, over)
         else:
             cache.evict(tokens)                          # last tier -> dropped
+            _tspill(f"inst={self.instance_id}   -> DROP {tokens} tok from last tier "
+                    f"({getattr(cache,'device','?')})")
 
     def _cascade_spill(self):
         """After a write into the CPU (shallowest storage) tier, push any

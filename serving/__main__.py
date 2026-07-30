@@ -280,6 +280,11 @@ def main():
     parser.add_argument('--dashboard-file', type=str, default='outputs/dashboard/live.json',
                         help='where the live-metrics JSON is written when --dashboard is set '
                         '(relative paths resolve from the repo root). Default outputs/dashboard/live.json.')
+    parser.add_argument('--timeline-seconds', type=float, default=None,
+                        help='initial sim-clock ceiling (in SECONDS) for the dashboard timeline AND all '
+                        'time-series plot x-axes. This is the fixed axis end until the run breaches it, at '
+                        'which point it is extended automatically. Overrides the default seed (the '
+                        "workload's last-arrival estimate). Display-only: does NOT stop the simulation.")
     parser.add_argument('--session-metrics', action='store_true', default=False,
                         help='for multi-turn / agentic-session workloads (records with "sub_requests"): '
                         'split the TTFT summary into first-turn (cold) vs resumed-turn (warm, context '
@@ -729,7 +734,8 @@ def main():
     # -------------------- Live dashboard (--dashboard) --------------------
     dash_enabled = bool(args.dashboard)          # NOTE: `args` is reused as a list
     dash_file = args.dashboard_file              # inside the loop (subprocess cmd),
-    dash_history = []                            # so capture the flags up front.
+    dash_timeline_seconds = args.timeline_seconds  # so capture the flags up front.
+    dash_history = []
     dash_write_path = None
     dash_config = None
     if dash_enabled:
@@ -758,6 +764,50 @@ def main():
                 })
         except Exception:
             _tier_specs = []
+        # Rough initial timeline length = the workload's LAST arrival time. The
+        # run always outlasts this (decode drain), but it anchors the timeline
+        # bar's end so the playhead sweeps a mostly-static axis. The frontend
+        # bumps the end only when the playhead reaches it, and projects the true
+        # end from the live decode rate + the total decode-token count below.
+        _arr_ns = [r.get("arrival_time_ns", 0) for r in getattr(router, "_pending_requests", [])]
+        _est_end_s = (max(_arr_ns) / FREQ) if _arr_ns else 0.0
+        # Total output (decode) tokens across the whole workload -> lets the
+        # dashboard project the drain tail (remaining decode / live rate). Parse
+        # the dataset directly so both flat and agentic-session (sub_requests)
+        # schemas are covered.
+        # Also count the TOTAL number of requests up front, so the dashboard's
+        # request-lifecycle funnel has a stable, workload-known denominator (the
+        # live routed count grows over time for streamed / multi-turn schemas).
+        # Flat schema: one request per line. Session schema: one per sub_request
+        # (each turn is routed as its own request).
+        _total_decode = 0
+        _total_requests = 0
+        if dataset:
+            import json as _js
+            # By now the sim has chdir'd into astra-sim/, so a relative dataset
+            # path needs the same "../" hop as dash_write_path; try both.
+            _cands = [dataset] if os.path.isabs(dataset) else [dataset, os.path.join("..", dataset)]
+            for _cand in _cands:
+                try:
+                    with open(_cand) as _f:
+                        for _ln in _f:
+                            _ln = _ln.strip()
+                            if not _ln:
+                                continue
+                            _r = _js.loads(_ln)
+                            _subs = _r.get("sub_requests")
+                            if isinstance(_subs, list):
+                                _total_requests += len(_subs)
+                                for _sr in _subs:
+                                    _total_decode += int(_sr.get("output_toks", 0) or 0)
+                            else:
+                                _total_requests += 1
+                                _total_decode += int(_r.get("output_toks", 0) or 0)
+                    break   # parsed successfully
+                except Exception:
+                    _total_decode = 0
+                    _total_requests = 0
+                    continue
         dash_config = {
             "models": sorted({inst["model_name"] for inst in instances}),
             "num_nodes": num_nodes, "num_instances": num_instances, "total_npu": total_npu,
@@ -768,6 +818,13 @@ def main():
             "cluster_config": os.path.basename(args.cluster_config),
             "dataset": os.path.basename(dataset) if dataset else None,
             "tier_specs": _tier_specs,
+            "run_id": args.run_id,
+            "est_end_s": round(_est_end_s, 2),   # last-arrival estimate (timeline seed)
+            "total_decode_tokens": _total_decode,  # for projecting the decode-drain tail
+            "est_total_requests": _total_requests,  # workload-known funnel denominator
+            # user-supplied initial sim-clock ceiling (seconds) for the timeline &
+            # all plot x-axes; None -> fall back to est_end_s. Extended if breached.
+            "axis_end_s": (float(dash_timeline_seconds) if dash_timeline_seconds and dash_timeline_seconds > 0 else None),
         }
         # Initial snapshot so the dashboard shows the config before the first interval.
         try:

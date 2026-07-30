@@ -3,17 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LLMServingSim — live</title>
+<title>LLMServingSim - Cross Rack KV Cache Reuse using OCTEON JBoF Memory Tier — live</title>
 <style>
   :root{
-    --bg:#0b0f14; --panel:#121821; --panel2:#0e141c; --line:#1e2733;
-    --txt:#e6edf3; --muted:#8b98a5; --accent:#3fb950; --accent2:#58a6ff;
+    /* near-black neutral bg + warm-orange accent + steel-slate labels + teal metadata */
+    --bg:#0a0a0c; --panel:#111114; --panel2:#0d0d10; --line:#26262b;
+    --txt:#f1f2f5; --muted:#838ea8; --accent:#f2622e; --accent2:#58a6ff;
+    --meta:#6f9585;
     --npu:#3fb950; --cpu:#58a6ff; --flash:#d29922; --jbof:#bc8cff; --cold:#8b98a5;
-    --warn:#d29922; --bad:#f85149; --codebg:#0d1117; --codetx:#a5d6ff;
+    --warn:#d29922; --bad:#f85149; --codebg:#0d0d10; --codetx:#a5d6ff;
   }
   body.light{
     --bg:#f6f8fa; --panel:#ffffff; --panel2:#eef1f4; --line:#d0d7de;
-    --txt:#1f2328; --muted:#59636e; --accent:#1a7f37; --accent2:#0969da;
+    --txt:#1f2328; --muted:#59636e; --accent:#d75a2a; --accent2:#0969da;
+    --meta:#3f7a5c;
     --npu:#1a7f37; --cpu:#0969da; --flash:#9a6700; --jbof:#8250df; --cold:#59636e;
     --warn:#9a6700; --bad:#cf222e; --codebg:#f0f3f6; --codetx:#0550ae;
   }
@@ -36,7 +39,7 @@
   .segbtn:first-child{border-left:0}
   .segbtn.active{background:var(--accent2);color:#fff;font-weight:700}
   .pill{display:inline-block;padding:2px 12px;border-radius:20px;font-size:12px;font-weight:700}
-  .st-running{background:rgba(63,185,80,.18);color:#56d364;border:1px solid #2ea043}
+  .st-running{background:rgba(242,98,46,.16);color:#ff7a45;border:1px solid #c2410c}
   .st-done{background:rgba(88,166,255,.18);color:#79c0ff;border:1px solid #388bfd}
   .st-starting{background:rgba(210,153,34,.18);color:#e3b341;border:1px solid #bb8009}
   .st-waiting,.st-error{background:rgba(139,152,165,.15);color:#8b98a5;border:1px solid #30363d}
@@ -51,18 +54,18 @@
   details.specs summary{cursor:pointer;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
   details.specs[open] summary{margin-bottom:8px}
   .progress{height:14px;background:var(--codebg);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:12px}
-  .progress > div{height:100%;background:linear-gradient(90deg,#238636,#3fb950);transition:width .4s}
+  .progress > div{height:100%;background:linear-gradient(90deg,#c2410c,#f2622e);transition:width .4s}
   .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
   .tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
   .tile .lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-  .tile .val{font-size:26px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+  .tile .val{font-size:26px;font-weight:500;margin-top:4px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
   .tile .delta{color:var(--muted);font-size:12px;margin-top:2px}
   #avgthru{margin-top:12px;border:1px solid var(--accent);border-radius:10px;background:var(--panel);padding:12px 14px}
   #avgthru h2{margin:0 0 8px}
   .thrurow{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
   .bigmetric{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;text-align:center}
   .bigmetric.hero{border-color:var(--accent)}
-  .bignum{font-size:28px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
+  .bignum{font-size:28px;font-weight:500;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
   .bigmetric.hero .bignum{color:var(--accent)}
   .biglbl{font-size:11px;color:var(--muted);margin-top:3px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
@@ -84,7 +87,8 @@
   th:first-child,td:first-child{text-align:left}
   th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
   .idle{opacity:.5}
-  .foot{color:var(--muted);font-size:12px;margin-top:26px;border-top:1px solid var(--line);padding-top:10px}
+  .foot{color:var(--meta);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+    text-transform:uppercase;letter-spacing:.05em;margin-top:26px;border-top:1px solid var(--line);padding-top:10px}
   .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--accent);margin-right:6px}
   .sublead{color:var(--muted);font-size:11px;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.04em;font-weight:700}
   /* per-chart "how it's calculated" explainer (technical + simplified) */
@@ -101,12 +105,46 @@
   .explain code{background:rgba(127,127,127,.16);padding:1px 5px;border-radius:4px;font-size:11.5px}
   .explain .f{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--txt)}
   .badge-new{display:inline-block;background:var(--jbof);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;vertical-align:middle;margin-left:6px}
+  /* V2 simulation timeline (full-width bar under the model banner) */
+  .tl-card{margin-top:10px;padding:12px 16px}
+  .tl-head{display:flex;justify-content:space-between;align-items:baseline;font-weight:600;font-size:14px;margin-bottom:2px}
+  .tl-legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:8px;font-size:12px;color:var(--muted)}
+  .tl-ev{display:flex;align-items:center;gap:5px}
+  .tl-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+  /* V2 hero: left = 4 key plots (2x2), right = request lifecycle + summary stats */
+  .hero{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:18px;margin-top:14px}
+  @media(max-width:1050px){.hero{grid-template-columns:1fr}}
+  .quad{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:560px){.quad{grid-template-columns:1fr}}
+  .qtile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .qh{font-size:12.5px;font-weight:700;margin:0 0 6px;display:flex;align-items:center;gap:6px;color:var(--txt)}
+  .hero-right > h2{margin-top:0}
+  /* KPI row: one rounded container, faint vertical dividers, label-on-top, thin white numbers */
+  .hero-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:12px;
+    border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
+  @media(max-width:560px){.hero-stats{grid-template-columns:repeat(2,1fr)}}
+  .hero-stats .bigmetric{border:0;border-left:1px solid var(--line);border-radius:0;
+    background:transparent;text-align:left;padding:12px 14px;
+    display:flex;flex-direction:column-reverse;gap:5px}
+  .hero-stats .bigmetric:first-child{border-left:0}
+  .hero-stats .bignum{font-size:24px;font-weight:500;color:var(--txt)}
+  .hero-stats .bignum .u{color:var(--accent);font-size:.6em;margin-left:1px;letter-spacing:0;font-weight:600}
+  .hero-stats .biglbl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-top:0}
+  /* compact prefix-cache + memory-by-tier, split across the right pane's lower half */
+  .hero-sub2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+  @media(max-width:560px){.hero-sub2{grid-template-columns:1fr}}
+  .hero-sub2 table{font-size:11.5px}
+  .hero-sub2 th,.hero-sub2 td{padding:4px 6px}
+  .hero-sub2 .tier{margin-bottom:9px}
+  /* OCTEON JBoF brand highlight — gentle pulse so it stands out */
+  .octeon{font-weight:700;white-space:nowrap;animation:octpulse 1.8s ease-in-out infinite}
+  @keyframes octpulse{0%,100%{opacity:1;text-shadow:none}50%{opacity:.62;text-shadow:0 0 7px currentColor}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="topbar">
-    <h1>📊 LLMServingSim <span class="sub">live metrics</span></h1>
+    <h1>📊 LLMServingSim - Cross Rack KV Cache Reuse using OCTEON JBoF Memory Tier <span class="sub">live metrics</span></h1>
     <div class="ctl">
       <span id="status" class="pill st-waiting">waiting</span>
       <span id="freshness" class="sub"></span>
@@ -120,21 +158,76 @@
     </div>
   </div>
   <div id="banner" class="banner"><div class="sub">Waiting for a run started with <code>--dashboard</code>…</div></div>
-  <details class="specs"><summary>⚙️ Tier specs — bandwidth / latency</summary><div id="specs"></div></details>
-  <details class="specs" open><summary>🧩 KV-cache unit — bytes per token &amp; smallest KV block</summary><div id="kvunit"></div></details>
-  <div class="progress"><div id="progbar" style="width:0%"></div></div>
-  <div id="progtext" class="sub" style="margin-top:6px"></div>
+  <div id="simtimeline" class="card tl-card"><div class="sub">⏱️ Simulation timeline — waiting for a run…</div></div>
+  <!-- ===== V2 hero: left = 4 key plots (2x2), right = request lifecycle + summary stats ===== -->
+  <div class="hero">
+    <div class="hero-left">
+      <div class="quad">
+        <div class="qtile">
+          <div class="qh">⚡ Average throughput <span class="sub" style="font-weight:400">(tok/s)</span></div>
+          <div id="chartThr"></div>
+          <details class="explain"><summary>How this is calculated</summary><div class="body">
+            <div class="tech"><span class="lab">Technical</span> Cumulative-average total token rate at each sim-time t:
+              <span class="f">mean_tps(t) = (Σ (prompt_tps + decode_tps) · Δ up to t) / t</span> — total tokens produced so far ÷ elapsed sim time. Converges to the whole-run average (the <b>average throughput</b> headline tile).</div>
+            <div class="simple"><span class="lab">In plain words</span> The running average tokens-per-second (prompt + output) since the run began — not the instantaneous rate, but the average so far. It settles toward the final overall throughput as the run proceeds.</div>
+          </div></details>
+        </div>
+        <div class="qtile">
+          <div class="qh">⏱️ Average TTFT <span class="sub" style="font-weight:400">(ms)</span></div>
+          <div id="chartTtftMean"></div>
+          <details class="explain"><summary>How this is calculated</summary><div class="body">
+            <div class="tech"><span class="lab">Technical</span> <span class="f">ttft = mean( r.ttft for r in every scheduler's <code>done</code> list )</span>, where
+              <span class="f">r.ttft = first_token_time − arrival</span>. The cumulative mean over <b>finished</b> requests, sampled each Δ; value in ms. (Same metric as the "Average TTFT" headline tile.)</div>
+            <div class="simple"><span class="lab">In plain words</span> The average time from a request arriving to its first output token, averaged over all requests finished so far. It reads 0 until the first request completes, then settles to the true average.</div>
+          </div></details>
+        </div>
+        <div class="qtile">
+          <div class="qh">⏱️ Average request completion time <span class="sub" style="font-weight:400">(ms)</span></div>
+          <div id="chartE2e"></div>
+          <details class="explain"><summary>How this is calculated</summary><div class="body">
+            <div class="tech"><span class="lab">Technical</span> <span class="f">e2e = mean( r.latency for r in <code>done</code> )</span>, where per request
+              <span class="f">latency = end_time − arrival</span> (full request turnaround). The cumulative mean over finished requests, sampled each Δ; value in ms. (Same metric as the "Average request completion time" headline tile.)</div>
+            <div class="simple"><span class="lab">In plain words</span> The average total time from a request arriving to its <b>last</b> output token — the whole answer's turnaround — averaged over all requests finished so far.</div>
+          </div></details>
+        </div>
+        <div class="qtile">
+          <div class="qh">🧠 KV spill memory</div>
+          <div id="chartMem"></div>
+          <details class="explain"><summary>How this is calculated</summary><div class="body">
+            <div class="tech"><span class="lab">Technical</span> Per tier, sampled each Δ:
+              <span class="f">used_bytes = (tokens held in that tier's pool) × (KV bytes per token)</span>, stacked CPU → FLASH → OCTEON JBoF → COLDSTORE. NPU HBM is excluded here (shown in its own panel). KV bytes/token = <span class="f">2 × kv_heads × head_dim × layers × dtype_bytes ÷ tp_size</span> (pooled tiers store the full context, so ×tp_size).</div>
+            <div class="simple"><span class="lab">In plain words</span> How much KV cache has overflowed out of GPU memory into each slower tier. It only grows once the GPU fills up; if the GPU never fills, these stay at zero.</div>
+          </div></details>
+        </div>
+      </div>
+    </div>
 
-  <h2 style="margin-top:18px">🔻 Request lifecycle</h2>
-  <div class="card"><div id="funnel"></div>
-    <details class="explain"><summary>How this is calculated</summary><div class="body">
-      <div class="tech"><span class="lab">Technical</span> Cumulative funnel over all routed requests (each is in exactly one of waiting / running / done). Persistent per-request flags:
-        <span class="f">arrived = arrival ≤ clock</span>;
-        <span class="f">started = queuing_delay ≥ 0</span> (set once when the first prefill chunk is admitted, scheduler.set_que_delay);
-        <span class="f">decoding = ttft ≥ 0</span> (first output token produced);
-        <span class="f">finished = in scheduler.done</span>. They nest: arrived ≥ started ≥ decoding ≥ finished.</div>
-      <div class="simple"><span class="lab">In plain words</span> The stages of a request's life: it <b>arrives</b>, then <b>starts</b> being served (prefill begins), then <b>enters decode</b> (first word out), then <b>finishes</b> (last word out). Each bar is how many requests have reached that stage so far — the gaps between bars are requests currently stuck at each stage (queued, prefilling, or mid-generation).</div>
-    </div></details>
+    <div class="hero-right">
+      <h2>🔻 Request statistics</h2>
+      <div class="card">
+        <div class="progress" style="margin-top:0"><div id="progbar" style="width:0%"></div></div>
+        <div id="progtext" class="sub" style="margin-top:6px;margin-bottom:14px"></div>
+        <div id="funnel"></div>
+        <details class="explain"><summary>How this is calculated</summary><div class="body">
+          <div class="tech"><span class="lab">Technical</span> Cumulative funnel over all requests. The denominator is the <b>total request count parsed from the workload file up front</b> (<code>est_total_requests</code>: one per line for flat schema, one per <code>sub_request</code> for sessions; falls back to the live routed count). Persistent per-request flags:
+            <span class="f">arrived = arrival ≤ clock</span>;
+            <span class="f">started = queuing_delay ≥ 0</span> (first prefill chunk admitted, scheduler.set_que_delay);
+            <span class="f">decoding = ttft ≥ 0</span> (first output token produced). They nest: arrived ≥ started ≥ decoding.</div>
+          <div class="simple"><span class="lab">In plain words</span> The stages of a request's life: it <b>arrives</b>, then <b>starts</b> being served (prefill begins), then <b>enters decode</b> (first word out). Each bar is how many requests have reached that stage so far — the gaps are requests currently stuck at each stage (queued or prefilling). The total is known ahead of time by reading the workload file, so the bars fill toward the true final count.</div>
+        </div></details>
+      </div>
+      <div id="herostats" class="hero-stats"></div>
+      <div class="hero-sub2">
+        <div class="qtile">
+          <div class="qh">🎯 Prefix cache</div>
+          <div id="prefixMini"></div>
+        </div>
+        <div class="qtile">
+          <div class="qh">🧠 Memory by tier</div>
+          <div id="tiersMini"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="avgthru"></div>
@@ -142,67 +235,17 @@
   <div id="tiles" class="tiles"></div>
 
   <div class="grid2" style="margin-top:8px">
-    <div><h2>⚡ Throughput over sim time</h2><div class="card"><div id="chartThr"></div></div>
-      <details class="explain"><summary>How this is calculated</summary><div class="body">
-        <div class="tech"><span class="lab">Technical</span> Two lines sampled once per <code>--log-interval</code> Δ (here 1&nbsp;s).
-          <span class="f">prompt_tps = (prompt/prefill tokens processed during Δ) / Δ</span>;
-          <span class="f">decode_tps = (output/decode tokens processed during Δ) / Δ</span>.
-          Internally tokens accrued in the interval are scaled by <span class="f">FREQ/INTERVAL</span> (INTERVAL = log_interval×FREQ, FREQ = 1e9&nbsp;ns/s).</div>
-        <div class="simple"><span class="lab">In plain words</span> How many prompt tokens (reading the question) and output tokens (writing the answer) the whole cluster produces each second, plotted over time. Prompt work dominates while requests arrive; when arrivals stop, decode takes over and its line jumps up.</div>
-      </div></details></div>
-    <div><h2>🧠 KV spill memory over sim time</h2><div class="card"><div id="chartMem"></div>
-      <div class="sub" style="margin-top:4px">Stacked usage of the spill tiers (CPU → deep tiers). NPU HBM shown separately below.</div></div>
-      <details class="explain"><summary>How this is calculated</summary><div class="body">
-        <div class="tech"><span class="lab">Technical</span> Per tier, sampled each Δ:
-          <span class="f">used_bytes = (tokens held in that tier's pool) × (KV bytes per token)</span>, stacked in order CPU → FLASH → JBOF → COLDSTORE. NPU HBM is excluded here (shown in its own panel). KV bytes/token = <span class="f">2 × kv_heads × head_dim × layers × dtype_bytes ÷ tp_size</span> (pooled tiers store the full context, so ×tp_size).</div>
-        <div class="simple"><span class="lab">In plain words</span> How much KV cache has overflowed out of GPU memory into each slower tier as the run goes. It only grows once the GPU fills up; if the GPU never fills, these stay at zero.</div>
-      </div></details></div>
-  </div>
-
-  <div class="grid2">
-    <div><h2>⏱️ TTFT over sim time <span class="sub">(by completion)</span></h2><div class="card"><div id="chartTtft"></div></div>
-      <details class="explain"><summary>How this is calculated</summary><div class="body">
-        <div class="tech"><span class="lab">Technical</span> <span class="f">ttft = mean( r.ttft for r in every scheduler's <code>done</code> list )</span>, where
-          <span class="f">r.ttft = first_token_time − arrival</span>. Aggregated over <b>finished</b> requests only (a request enters <code>done</code> after its <b>last</b> token), so a request contributes to this line only once it has fully completed. Value in ms.</div>
-        <div class="simple"><span class="lab">In plain words</span> Average time-to-first-token — but counting only requests that have <b>completely finished</b>. Because a request isn't counted until it's done generating all its tokens, this line stays at 0 until the first request finishes, then jumps. It's the true value, just reported late.</div>
-      </div></details></div>
-    <div><h2>⏱️ TBT over sim time</h2><div class="card"><div id="chartTbt"></div></div>
-      <details class="explain"><summary>How this is calculated</summary><div class="body">
-        <div class="tech"><span class="lab">Technical</span> <span class="f">tbt = mean( r.tpot for r in <code>done</code> )</span>, where per request
-          <span class="f">tpot = (end_time − first_token_time) / (output_tokens − 1)</span> (time-per-output-token). Aggregated over finished requests; value in ms.</div>
-        <div class="simple"><span class="lab">In plain words</span> Average gap between two consecutive output tokens, for finished requests. It rises when each GPU is decoding many sequences at once and as each sequence's context grows longer.</div>
-      </div></details></div>
-  </div>
-
-  <div class="grid2">
-    <div><h2>⏱️ TTFT at first-token time <span class="badge-new">NEW</span></h2><div class="card"><div id="chartTtftFt"></div></div>
-      <details class="explain" open><summary>How this is calculated</summary><div class="body">
-        <div class="tech"><span class="lab">Technical</span> For each interval (t_prev, t_now], average the TTFT of requests whose <b>first token</b> landed in that interval:
-          <span class="f">ttft_ft = mean( r.ttft for r where t_prev &lt; (r.arrival + r.ttft)/FREQ ≤ t_now )</span>, scanning requests that have started decoding (in a running batch) or finished (in <code>done</code>). Binned by <b>first-token time</b>, not completion time. Empty intervals (no new first tokens) read 0.</div>
-        <div class="simple"><span class="lab">In plain words</span> The real time-to-first-token as it actually happens, plotted at the moment each request emits its first token — so you see the true (low, flat ~200&nbsp;ms) TTFT throughout the run instead of the 0-then-jump of the "by completion" chart on the left. It drops to 0 after arrivals stop, because no new first tokens are being produced then.</div>
-      </div></details></div>
-    <div><h2>🔎 Why two TTFT charts?</h2><div class="card">
-      <div class="sub" style="line-height:1.6">Both use the <b>same</b> per-request TTFT (<span class="f">first_token − arrival</span>); they differ only in <b>when each request is plotted on the time axis</b>:
-        <ul style="margin:8px 0 0 18px;padding:0">
-          <li style="margin-bottom:6px"><b>By completion</b> (left) plots a request once it has fully <b>finished</b>. With long generations this lags a lot — the line is 0 until the first request completes, then jumps to the true value.</li>
-          <li><b>At first-token time</b> (new) plots a request the instant it produces its <b>first</b> token. This shows the true, low, flat TTFT live — no lag.</li>
-        </ul>
-        <div style="margin-top:8px">If the two disagree in <i>shape</i> but agree in <i>final value</i>, that's expected: same numbers, different x-axis placement.</div>
-      </div></div></div>
-  </div>
-
-  <div class="grid2">
     <div><h2>🧠 Memory by tier (now)</h2><div class="card"><div id="tiers"></div></div>
       <details class="explain"><summary>How this is calculated</summary><div class="body">
         <div class="tech"><span class="lab">Technical</span> A snapshot at the current sim-time. Per tier:
-          <span class="f">used = (tokens in pool) × (KV bytes/token)</span>, <span class="f">cap = configured mem_size</span>, <span class="f">%used = used / cap</span>. NPU is per-GPU; CPU is per-node or per-instance (see <code>--cpu-scope</code>); JBOF/COLDSTORE are one pod-wide shared pool.</div>
+          <span class="f">used = (tokens in pool) × (KV bytes/token)</span>, <span class="f">cap = configured mem_size</span>, <span class="f">%used = used / cap</span>. NPU is per-GPU; CPU is per-node or per-instance (see <code>--cpu-scope</code>); OCTEON JBoF/COLDSTORE are one pod-wide shared pool.</div>
         <div class="simple"><span class="lab">In plain words</span> How full each memory tier is right now — GPU HBM at the top, then progressively slower/larger tiers it spills into.</div>
       </div></details></div>
     <div><h2>🎯 Prefix cache</h2><div class="card"><div id="prefix"></div></div>
       <details class="explain"><summary>How this is calculated</summary><div class="body">
         <div class="tech"><span class="lab">Technical</span> <span class="f">hit_ratio = Σ hit_tokens / Σ requested_prompt_tokens</span>. Per tier: <span class="f">hit_tokens</span> = prompt tokens served from cached KV in that tier;
           <span class="f">reload_ms = Σ ( mem_latency + bytes/mem_bw [+ link_latency + bytes/link_bw] )</span> over reloads pulled up from that tier into the GPU.</div>
-        <div class="simple"><span class="lab">In plain words</span> How much prompt work was skipped by reusing previously-computed KV (higher hit % = less recompute), and how long it cost to pull that reused data back up from each tier. Fast tiers (JBOF) add little; slow ones (COLDSTORE) add a lot.</div>
+        <div class="simple"><span class="lab">In plain words</span> How much prompt work was skipped by reusing previously-computed KV (higher hit % = less recompute), and how long it cost to pull that reused data back up from each tier. Fast tiers (OCTEON JBoF) add little; slow ones (COLDSTORE) add a lot.</div>
       </div></details></div>
   </div>
 
@@ -234,7 +277,7 @@
       <div id="sessionHdr" class="sub" style="margin-bottom:8px"></div>
       <div id="sessiontab"></div>
       <div class="sub" style="margin-top:6px">A resumed turn reloads the conversation's <b>parked</b> context
-        from a lower tier before answering — that reload lands in its TTFT. With <b>JBOF</b> the reload is fast;
+        from a lower tier before answering — that reload lands in its TTFT. With <b>OCTEON JBoF</b> the reload is fast;
         without it the context falls to <b>COLDSTORE</b> and resumed-turn TTFT climbs. Cold first-turn has no reload.</div>
       <details class="explain"><summary>How this is calculated</summary><div class="body">
         <div class="tech"><span class="lab">Technical</span> Finished requests are split by <code>sub_request_index</code>: <span class="f">0 = first turn (cold)</span>, <span class="f">≥1 = resumed turn (warm)</span>. TTFT percentiles are computed for each group;
@@ -251,6 +294,10 @@
       <span class="f">weight_bytes ≈ params × dtype_bytes</span>; <span class="f">KV/token = 2 × kv_heads × head_dim × layers × dtype_bytes ÷ tp</span>; <span class="f">KV/block = KV/token × block_size</span>. A TP=N instance spans N GPUs, each holding weight/N + its KV shard.</div>
     <div class="simple"><span class="lab">In plain words</span> How much of each GPU's memory is taken by the model weights plus its share of the KV cache. If "%used" never gets high, nothing spills to the slower tiers — which is why the KV-spill and prefix-reload panels can stay empty.</div>
   </div></details>
+
+  <h2>⚙️ Configuration &amp; sizing</h2>
+  <details class="specs"><summary>⚙️ Tier specs — bandwidth / latency</summary><div id="specs"></div></details>
+  <details class="specs"><summary>🧩 KV-cache unit — bytes per token &amp; smallest KV block</summary><div id="kvunit"></div></details>
 
   <div id="foot" class="foot"></div>
 </div>
@@ -272,77 +319,94 @@ const collecting = () => `<div class="sub" style="padding:26px 4px">Collecting s
 function tile(lbl,val,delta){ return `<div class="tile"><div class="lbl">${lbl}</div>
   <div class="val">${val}</div>${delta?`<div class="delta">${delta}</div>`:""}</div>`; }
 
+// "OCTEON JBoF" branding: show the JBOF tier as "OCTEON JBoF" (data key stays "JBOF");
+// octSpan wraps it in a gently-pulsing highlight for HTML contexts.
+const tdisp = n => (n==="JBOF" ? "OCTEON JBoF" : n);
+function octSpan(str){ return esc(str).split("OCTEON JBoF").join('<span class="octeon">OCTEON JBoF</span>'); }
+
 // ---- generalized SVG line chart (one or more series) --------------------- //
-function lineChart(elId, hist, series, yfmt){
+function lineChart(elId, hist, series, yfmt, xMax){
   const el=$(elId);
   if(!hist||hist.length<2){ el.innerHTML=collecting(); return; }
-  const W=620,H=280,pad=54;
-  const xs=hist.map(p=>p.t_s), minX=Math.min(...xs), maxX=Math.max(...xs);
+  const W=620,H=300,padL=70,padR=16,padT=20,padB=46;
+  const xs=hist.map(p=>p.t_s), minX=Math.min(...xs);
+  const maxX=(xMax!=null)?Math.max(xMax,Math.max(...xs)):Math.max(...xs);   // fixed ceiling (extend if breached)
   const maxY=Math.max(1e-9,...series.flatMap(s=>hist.map(p=>+p[s.key]||0)));
-  const X=v=>pad+(maxX===minX?0:(v-minX)/(maxX-minX))*(W-pad-12);
-  const Y=v=>H-pad-(v/maxY)*(H-pad-18);
-  const lines=series.map(s=>`<polyline fill="none" stroke="${s.color}" stroke-width="2.5"
+  const X=v=>padL+(maxX===minX?0:(v-minX)/(maxX-minX))*(W-padL-padR);
+  const Y=v=>H-padB-(v/maxY)*(H-padB-padT);
+  const NY=6, NX=6, xdec=(maxX-minX)<10?1:0;
+  let grid="";
+  for(let i=0;i<=NY;i++){ const gy=padT+(i/NY)*(H-padB-padT), val=maxY*(1-i/NY);
+    grid+=`<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${W-padR}" y2="${gy.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity="${i===NY?1:0.5}"/>`
+        + `<text x="${padL-10}" y="${(gy+5).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="16">${yfmt(val)}</text>`; }
+  for(let i=0;i<=NX;i++){ const tv=minX+(i/NX)*(maxX-minX), gx=X(tv);
+    grid+=`<line x1="${gx.toFixed(1)}" y1="${padT}" x2="${gx.toFixed(1)}" y2="${H-padB}" stroke="var(--line)" stroke-width="1" opacity="${i===0?1:0.32}"/>`
+        + `<text x="${gx.toFixed(1)}" y="${H-padB+26}" text-anchor="middle" fill="var(--muted)" font-size="16">${tv.toFixed(xdec)}s</text>`; }
+  const lines=series.map(s=>`<polyline fill="none" stroke="${s.color}" stroke-width="3"
      points="${hist.map(p=>X(p.t_s).toFixed(1)+','+Y(+p[s.key]||0).toFixed(1)).join(' ')}"/>`).join("");
-  let ticks=""; for(let i=0;i<=4;i++){ const gy=pad+(i/4)*(H-pad-18); const val=maxY*(1-i/4);
-    ticks+=`<line x1="${pad}" y1="${gy}" x2="${W-12}" y2="${gy}" stroke="var(--line)"/>
-      <text x="${pad-6}" y="${gy+3}" text-anchor="end" fill="var(--muted)" font-size="10">${yfmt(val)}</text>`; }
-  const leg=series.map((s,i)=>`<text x="${W-12}" y="${14+i*15}" text-anchor="end" fill="${s.color}" font-size="11">■ ${esc(s.label)}</text>`).join("");
-  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="monospace">${ticks}${lines}${leg}
-    <text x="${pad}" y="${H-6}" fill="var(--muted)" font-size="10">${minX.toFixed(1)}s</text>
-    <text x="${W-12}" y="${H-6}" text-anchor="end" fill="var(--muted)" font-size="10">${maxX.toFixed(1)}s</text></svg>`;
+  const leg=series.map((s,i)=>`<text x="${W-padR}" y="${padT+6+i*20}" text-anchor="end" fill="${s.color}" font-size="15">■ ${esc(s.label)}</text>`).join("");
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="monospace">${grid}${lines}${leg}</svg>`;
 }
 
 // ---- stacked-area chart for tier memory over time ------------------------ //
-function stackChart(elId, hist, tiers){
+function stackChart(elId, hist, tiers, xMax){
   const el=$(elId);
   if(!hist||hist.length<2||!tiers.length){ el.innerHTML=collecting(); return; }
-  const W=620,H=280,pad=64;
-  const xs=hist.map(p=>p.t_s), minX=Math.min(...xs), maxX=Math.max(...xs);
+  const W=620,H=300,padL=70,padR=16,padT=20,padB=46;
+  const xs=hist.map(p=>p.t_s), minX=Math.min(...xs);
+  const maxX=(xMax!=null)?Math.max(xMax,Math.max(...xs)):Math.max(...xs);   // fixed ceiling (extend if breached)
   const totals=hist.map(p=>tiers.reduce((a,t)=>a+((p.mem&&p.mem[t])||0),0));
   const maxY=Math.max(1,...totals);
-  const X=v=>pad+(maxX===minX?0:(v-minX)/(maxX-minX))*(W-pad-12);
-  const Y=v=>H-pad-(v/maxY)*(H-pad-18);
+  const X=v=>padL+(maxX===minX?0:(v-minX)/(maxX-minX))*(W-padL-padR);
+  const Y=v=>H-padB-(v/maxY)*(H-padB-padT);
+  const NY=6, NX=6, xdec=(maxX-minX)<10?1:0;
+  let grid="";
+  for(let i=0;i<=NY;i++){ const gy=padT+(i/NY)*(H-padB-padT), val=maxY*(1-i/NY);
+    grid+=`<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${W-padR}" y2="${gy.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity="${i===NY?1:0.5}"/>`
+        + `<text x="${padL-10}" y="${(gy+5).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="16">${fb(val)}</text>`; }
+  for(let i=0;i<=NX;i++){ const tv=minX+(i/NX)*(maxX-minX), gx=X(tv);
+    grid+=`<line x1="${gx.toFixed(1)}" y1="${padT}" x2="${gx.toFixed(1)}" y2="${H-padB}" stroke="var(--line)" stroke-width="1" opacity="${i===0?1:0.32}"/>`
+        + `<text x="${gx.toFixed(1)}" y="${H-padB+26}" text-anchor="middle" fill="var(--muted)" font-size="16">${tv.toFixed(xdec)}s</text>`; }
   const cum=hist.map(()=>0); let areas="";
   tiers.forEach(t=>{
     const top=hist.map((p,i)=>cum[i]+((p.mem&&p.mem[t])||0));
     const topPts=hist.map((p,i)=>X(p.t_s).toFixed(1)+','+Y(top[i]).toFixed(1));
     const botPts=hist.map((p,i)=>X(p.t_s).toFixed(1)+','+Y(cum[i]).toFixed(1)).reverse();
-    areas+=`<polygon points="${topPts.concat(botPts).join(' ')}" fill="${tcol(t)}" fill-opacity="0.5" stroke="${tcol(t)}" stroke-width="1"/>`;
+    areas+=`<polygon points="${topPts.concat(botPts).join(' ')}" fill="${tcol(t)}" fill-opacity="0.5" stroke="${tcol(t)}" stroke-width="1.5"/>`;
     hist.forEach((p,i)=>{cum[i]=top[i];});
   });
-  let ticks=""; for(let i=0;i<=4;i++){ const gy=pad+(i/4)*(H-pad-18); const val=maxY*(1-i/4);
-    ticks+=`<line x1="${pad}" y1="${gy}" x2="${W-12}" y2="${gy}" stroke="var(--line)"/>
-      <text x="${pad-6}" y="${gy+3}" text-anchor="end" fill="var(--muted)" font-size="10">${fb(val)}</text>`; }
-  const leg=tiers.map((t,i)=>`<text x="${W-12}" y="${14+i*15}" text-anchor="end" fill="${tcol(t)}" font-size="11">■ ${esc(t)}</text>`).join("");
-  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="monospace">${ticks}${areas}${leg}
-    <text x="${pad}" y="${H-6}" fill="var(--muted)" font-size="10">${minX.toFixed(1)}s</text>
-    <text x="${W-12}" y="${H-6}" text-anchor="end" fill="var(--muted)" font-size="10">${maxX.toFixed(1)}s</text></svg>`;
+  const leg=tiers.map((t,i)=>`<text x="${W-padR}" y="${padT+6+i*20}" text-anchor="end" fill="${tcol(t)}" font-size="15">■ ${esc(tdisp(t))}</text>`).join("");
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="monospace">${grid}${areas}${leg}</svg>`;
 }
 
-function renderTiers(tiers){
-  const el=$("tiers"); if(!tiers||!tiers.length){ el.innerHTML='<div class="sub">No tiers.</div>'; return; }
+// elId: target element (default "tiers"). compact=true renders ONLY the overall
+// per-tier bar (no per-device split, no NPU note) for the hero-right mini panel.
+function renderTiers(tiers, elId, compact){
+  const el=$(elId||"tiers"); if(!el) return;
+  if(!tiers||!tiers.length){ el.innerHTML='<div class="sub">No tiers.</div>'; return; }
   el.innerHTML = tiers.map(t=>{
-    const col=tcol(t.name);
+    const col="var(--accent)";   // all tier bars + names in one orange (per request)
     const pooled=t.scope==="pooled";
     const scopeTxt = pooled?"pooled (pod-wide)":t.scope;
     let devs="";
-    if(!pooled && (t.devices||[]).length>1){
+    if(!compact && !pooled && (t.devices||[]).length>1){
       devs = `<div class="devs">`+t.devices.map(d=>`<div class="dev">
         <span class="sub">${esc(d.label)}${d.gpus>1?` · ${d.gpus}×GPU`:''}</span>
         <div class="bar db"><div style="width:${Math.min(100,d.pct).toFixed(1)}%;background:${col};opacity:.8"></div></div>
         <span class="amt" style="text-align:right">${fb(d.used_bytes)} / ${fb(d.cap_bytes)}</span>
       </div>`).join("")+`</div>`;
     }
-    const note = t.name==="NPU"
+    const note = (!compact && t.name==="NPU")
       ? `<div class="sub" style="font-size:11px;margin-top:2px">KV-cache tier only — capacity = per-GPU HBM − resident model weights. Full HBM (weights + KV) is in the <b>NPU HBM</b> table below.</div>`
       : "";
     const unit = (t.name==="CPU"||t.name==="NPU") ? "instance" : "device";
+    const suffix = (pooled||compact) ? "" : ` · total across ${(t.devices||[]).length} ${unit}(s)`;
     return `<div class="tier">
-      <div class="hd"><span class="nm" style="color:${col}">${esc(t.name)}</span>
+      <div class="hd"><span class="nm" style="color:${col}">${octSpan(tdisp(t.name))}</span>
         <span class="scope ${pooled?'pooled':''}">${esc(scopeTxt)}</span></div>
       <div class="bar"><div style="width:${Math.min(100,t.total_pct).toFixed(1)}%;background:${col}"></div></div>
       <div class="amt" style="margin-top:3px">${fb(t.total_used_bytes)} / ${fb(t.total_cap_bytes)}
-        &nbsp;(${(t.total_pct||0).toFixed(2)}%)${pooled?"":` · total across ${(t.devices||[]).length} ${unit}(s)`}</div>
+        &nbsp;(${(t.total_pct||0).toFixed(2)}%)${suffix}</div>
       ${note}${devs}</div>`;
   }).join("");
 }
@@ -352,6 +416,76 @@ function renderTable(el, cols, rows, idleIf){
   const head="<tr>"+cols.map(c=>`<th>${c.h}</th>`).join("")+"</tr>";
   const body=rows.map(r=>`<tr class="${idleIf&&idleIf(r)?'idle':''}">`+cols.map(c=>`<td>${r[c.k]}</td>`).join("")+"</tr>").join("");
   el.innerHTML=`<table>${head}${body}</table>`;
+}
+
+// ---- V2 simulation timeline (event markers + moving playhead) ---- //
+// Harmonious categorical palette for the timeline markers (dark-bg friendly):
+// cool hues for the request-lifecycle events, a warm amber->orange->red
+// escalation for the tier-spill events, green for completion.
+const EVENT_MAP = {
+  first_arrival:     {label:"First request arrival",  color:"#38bdf8"},  // sky
+  first_token:       {label:"First token generated",  color:"#818cf8"},  // indigo
+  first_finish:      {label:"First request completed", color:"#c084fc"}, // violet
+  arrivals_complete: {label:"All requests arrived",   color:"#f472b6"},  // pink
+  cpu_spill:         {label:"CPU DRAM spill begins",  color:"#fbbf24"},  // amber
+  jbof_spill:        {label:"OCTEON JBoF spill begins", color:"#fb923c"},  // orange
+  coldstore_spill:   {label:"COLDSTORE spill begins", color:"#f87171"},  // red
+  run_complete:      {label:"Run complete",           color:"#4ade80"},  // green
+};
+// Fallback: derive tier/throughput events from history when the backend
+// snapshot predates the events field (older run still writing live.json).
+function deriveEvents(hist){
+  const ev=[]; if(!hist||!hist.length) return ev;
+  const mem=(p,k)=>((p.mem||{})[k]||0);
+  const firstTs=f=>{ for(const p of hist){ if(f(p)) return p.t_s; } return null; };
+  const add=(k,t)=>{ if(t!=null) ev.push({key:k,t_s:t}); };
+  add("first_token", firstTs(p=>(+p.decode_tps||0)>0));
+  add("cpu_spill",   firstTs(p=>mem(p,"CPU")>0));
+  add("jbof_spill",  firstTs(p=>mem(p,"JBOF")>0));
+  add("coldstore_spill", firstTs(p=>mem(p,"COLDSTORE")>0));
+  return ev;
+}
+// Sticky timeline end: seeded from the workload's last-arrival estimate, held
+// STATIC while the playhead sweeps it, and bumped ONCE (doubled) only when the
+// playhead actually reaches the end. Re-seeded per run (run_id change).
+let TL_END=null, TL_RUN=null;
+function renderTimeline(d){
+  const el=$("simtimeline"); if(!el) return;
+  const nowS=(d.sim&&d.sim.sim_seconds)||0, status=d.status||"waiting";
+  let events=(d.events&&d.events.length)?d.events.slice():deriveEvents((d.throughput||{}).history);
+  const seen={};
+  events=events.filter(e=>EVENT_MAP[e.key]&&!seen[e.key]&&(seen[e.key]=1)).sort((a,b)=>a.t_s-b.t_s);
+  const estEnd=(d.config&&d.config.est_end_s)||0, rid=(d.config||{}).run_id||null;
+  const axisSeed=(d.config&&d.config.axis_end_s)||0;   // user --timeline-seconds ceiling (0 = not set)
+  if(TL_END==null || rid!==TL_RUN){ TL_END = axisSeed>0 ? axisSeed : Math.max(estEnd,nowS,1); TL_RUN=rid; }   // seed on new run
+  if(nowS>=TL_END){
+    // Bump once on reach — but PROJECT the true end from the run's own decode
+    // rate + the decode tokens still to go, rather than blindly doubling. This
+    // makes the (usually single) bump land near the real finish. rate = robust
+    // recent decode throughput (max of last few intervals + live).
+    const hist=(d.throughput||{}).history||[];
+    const rate=Math.max(0,...hist.slice(-5).map(p=>+p.decode_tps||0),(d.throughput||{}).live_decode_tok_per_s||0);
+    const totDec=(d.config&&d.config.total_decode_tokens)||0, doneDec=(d.counters&&d.counters.decode_tokens)||0;
+    let target=TL_END*2;                                                 // fallback: blind double
+    if(rate>0 && totDec>doneDec) target=nowS+((totDec-doneDec)/rate)*1.15;   // remaining drain + 15% headroom
+    TL_END=Math.max(target, nowS*1.25);
+  }
+  const T=TL_END;   // STATIC end (sticky between bumps)
+  const W=1000,H=64,padL=10,padR=10,ax=30, X=v=>padL+(v/T)*(W-padL-padR);
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="monospace">`;
+  for(let i=0;i<=4;i++){ const tv=T*i/4,x=X(tv);
+    s+=`<line x1="${x}" y1="${ax-5}" x2="${x}" y2="${ax+5}" stroke="var(--line)"/><text x="${x}" y="${ax+20}" text-anchor="middle" fill="var(--muted)" font-size="10">${tv.toFixed(0)}s</text>`; }
+  s+=`<line x1="${padL}" y1="${ax}" x2="${W-padR}" y2="${ax}" stroke="var(--line)" stroke-width="2"/>`;
+  s+=`<line x1="${padL}" y1="${ax}" x2="${X(nowS).toFixed(1)}" y2="${ax}" stroke="var(--accent)" stroke-width="4" opacity="0.45"/>`;
+  events.forEach(e=>{ const m=EVENT_MAP[e.key],x=X(e.t_s);
+    s+=`<circle cx="${x}" cy="${ax}" r="5" fill="${m.color}" stroke="var(--panel)" stroke-width="1.5"><title>${esc(m.label)} @ ${e.t_s.toFixed(1)}s</title></circle>`; });
+  const nx=X(nowS);
+  s+=`<polygon points="${nx-4},${ax-12} ${nx+4},${ax-12} ${nx},${ax-4}" fill="var(--txt)"/><line x1="${nx}" y1="${ax-12}" x2="${nx}" y2="${ax+8}" stroke="var(--txt)" stroke-width="1.2"/></svg>`;
+  const leg=events.map(e=>{ const m=EVENT_MAP[e.key];
+    return `<span class="tl-ev"><span class="tl-dot" style="background:${m.color}"></span>${octSpan(m.label)} <b style="color:var(--txt)">${e.t_s.toFixed(0)}s</b></span>`; }).join("");
+  el.innerHTML=`<div class="tl-head"><span>⏱️ Simulation timeline</span>`+
+    `<span class="sub">now <b style="color:var(--txt)">${nowS.toFixed(0)}s</b> · ${status==='done'?'<span style="color:#4ade80">complete</span>':esc(status)}</span></div>`+
+    s+`<div class="tl-legend">${leg||'<span class="sub">no events yet…</span>'}</div>`;
 }
 
 async function poll(){
@@ -365,19 +499,20 @@ async function poll(){
   const c=d.config, sim=d.sim||{}, ct=d.counters||{}, thr=d.throughput||{}, lat=d.latency||{};
   $("banner").innerHTML=[
     ["model(s)", (c.models||[]).join(", ")],
+    ["workload", `<code>${esc(c.dataset||"—")}</code>`],
     ["topology", `${c.num_nodes} node · ${c.num_instances} inst · ${c.total_npu} GPU · TP ${JSON.stringify(c.tp_sizes)}`],
-    ["tier-policy", `<code>${esc(c.tier_policy)}</code>`],
-    ["cpu-scope", `<code>${esc(c.cpu_scope)}</code>`],
-    ["prefix-storage", `<code>${esc(c.prefix_storage)}</code>`],
+    ["prefix-storage", `<code>${octSpan(tdisp(c.prefix_storage))}</code>`],
     ["dtype / block", `${esc(c.dtype)} / ${esc(c.block_size)}`],
     ["sim clock", `${(sim.sim_seconds||0).toFixed(3)} s`],
-    ["wall", `${(d.wall_seconds||0).toFixed(1)} s`],
+    ["system time elapsed", `${(d.wall_seconds||0).toFixed(1)} s`],
   ].map(([k,v])=>`<div><div class="k">${k}</div><b>${v}</b></div>`).join("");
+
+  renderTimeline(d);
 
   const ts=c.tier_specs||[];
   $("specs").innerHTML = ts.length ? `<table><tr><th>tier</th><th>scope</th><th>mem BW (GB/s)</th>
     <th>mem lat (ns)</th><th>link BW (GB/s)</th><th>link lat (ns)</th></tr>`+
-    ts.map(s=>`<tr><td style="color:${tcol(s.name)};font-weight:700">${esc(s.name)}</td><td class="sub">${esc(s.scope||'')}</td>
+    ts.map(s=>`<tr><td style="color:${tcol(s.name)};font-weight:700">${octSpan(tdisp(s.name))}</td><td class="sub">${esc(s.scope||'')}</td>
       <td>${s.mem_bw??'—'}</td><td>${fi(s.mem_latency)!=='0'||s.mem_latency===0?fi(s.mem_latency):'—'}</td>
       <td>${s.link_bw??'—'}</td><td>${s.link_latency!=null?fi(s.link_latency):'—'}</td></tr>`).join("")+`</table>`
     : '<div class="sub">n/a</div>';
@@ -387,7 +522,7 @@ async function poll(){
   if(ku){
     const rows=[
       ["KV per <b>token</b> · per GPU (TP rank)", fb(ku.bytes_per_token_per_gpu), "what one token adds to a GPU's KV cache"],
-      ["KV per <b>token</b> · full context", fb(ku.bytes_per_token_full), `all ${ku.tp_size} TP ranks — the size stored in CPU / JBOF / COLDSTORE`],
+      ["KV per <b>token</b> · full context", fb(ku.bytes_per_token_full), `all ${ku.tp_size} TP ranks — the size stored in CPU / OCTEON JBoF / COLDSTORE`],
       ["Block size (page)", `${fi(ku.block_size)} tokens`, "KV is allocated / evicted a block at a time"],
       ["<b>Smallest KV unit</b> — one block · per GPU", `<b>${fb(ku.block_bytes_per_gpu)}</b>`, "the smallest chunk of KV cache the NPU ever allocates"],
       ["One block · full context", fb(ku.block_bytes_full), `block × ${ku.tp_size} TP ranks`],
@@ -403,21 +538,26 @@ async function poll(){
       `</div>`;
   } else { $("kvunit").innerHTML='<div class="sub">n/a</div>'; }
 
-  const done=ct.requests_finished||0, tot=ct.requests_total||0;
-  const pct = tot? Math.min(100,100*done/tot) : (status==="done"?100:0);
+  const done=ct.requests_finished||0;
+  // Prefer the workload-parsed total (known up front, stable) as the denominator;
+  // fall back to the live routed count for older snapshots without the estimate.
+  const estTot=(d.config&&d.config.est_total_requests)||0;
+  const tot=estTot || ct.requests_total || 0;
+  const pct = status==="done" ? 100 : (tot? Math.min(100,100*done/tot) : 0);
   $("progbar").style.width=pct+"%";
-  $("progtext").textContent=`Requests finished ${fi(done)} / ${fi(tot)}`;
+  $("progtext").innerHTML=`Requests finished ${fi(done)} / ${fi(tot)}`
+    + (estTot?` <span style="opacity:.7">(total parsed from workload)</span>`:"");
 
-  // ---- request lifecycle funnel: arrived -> started -> decoding -> finished ---- //
+  // ---- request lifecycle funnel: arrived -> started -> decoding (Finished bar
+  // dropped as redundant with the progress bar / summary stats). ---- //
   const _funnelStages=[
-    ["Arrived",             ct.requests_arrived,  "var(--cpu)"],
-    ["Started (prefill)",   ct.requests_started,  "var(--flash)"],
-    ["Decoding (1st token)",ct.requests_decoding, "var(--jbof)"],
-    ["Finished",            ct.requests_finished, "#3fb950"],
+    ["Arrived",              ct.requests_arrived,  "var(--accent)"],
+    ["Started (prefill)",    ct.requests_started,  "var(--accent)"],
+    ["Decoding (1st token)", ct.requests_decoding, "var(--accent)"],
   ];
   $("funnel").innerHTML=`<div class="devs">`+_funnelStages.map(([nm,v,c])=>{
     v=+v||0; const p=tot?Math.min(100,100*v/tot):0;
-    return `<div class="dev" style="grid-template-columns:170px 1fr 170px;align-items:center">
+    return `<div class="dev" style="grid-template-columns:130px 1fr auto;align-items:center">
       <span class="sub" style="color:var(--txt)">${nm}</span>
       <div class="bar"><div style="width:${p.toFixed(1)}%;background:${c}"></div></div>
       <span class="amt" style="text-align:right">${fi(v)} / ${fi(tot)} <span class="sub">(${p.toFixed(1)}%)</span></span>
@@ -451,6 +591,15 @@ async function poll(){
     `<div class="sub" style="font-size:11px;margin-top:6px">over ${(sim.sim_seconds||0).toFixed(2)} s sim · ${fi(done)}/${fi(tot)} requests finished. `+
     `<b>total</b> = end-to-end average (÷ full sim time, diluted by idle gaps); <b>active</b> = average over intervals that produced tokens (idle-robust); <b>peak</b> = best interval.</div>`;
 
+  // ---- hero-right summary stat tiles: white number + orange unit, uniform cells ---- //
+  const _u=(n,u)=>`${n}<span class="u">${u}</span>`;
+  const _e2e=((lat.e2e||{}).mean||0);
+  const _e2eStr = _e2e>=1000 ? _u((_e2e/1000).toFixed(2),"s") : _u(_e2e.toFixed(0),"ms");
+  $("herostats").innerHTML=
+    metric(_u((thr.total_tok_per_s||0).toFixed(0),"tok/s"),"average throughput")+
+    metric(_u(((lat.ttft||{}).mean||0).toFixed(0),"ms"),"Average TTFT")+
+    metric(_e2eStr,"Average request completion time");
+
   $("tiles").innerHTML=[
     tile("Requests done", fi(done), `${fi(ct.requests_running)} running · ${fi(ct.requests_waiting)} waiting`),
     tile("Prompt tokens", fi(ct.prompt_tokens), `${(thr.prompt_tok_per_s||0).toFixed(0)} tok/s avg`),
@@ -463,25 +612,38 @@ async function poll(){
   ].join("");
 
   // ---- timeline charts ---- //
+  // When --timeline-seconds is set, lock every plot's x-axis to the SAME sticky
+  // ceiling as the simulation timeline (TL_END, updated by renderTimeline above),
+  // so the timeline and all plots share one time axis and extend together on breach.
+  const axisOverride = (c.axis_end_s && c.axis_end_s>0) ? TL_END : null;
+  // single line = MEAN (cumulative-average) throughput over sim time:
+  // tokens produced so far / elapsed sim time, converging to the whole-run
+  // average. Integrate the per-interval total rate over each interval's width.
+  let _cumTok=0;
+  hist.forEach((p,i)=>{
+    const tot=(+p.prompt_tps||0)+(+p.decode_tps||0);
+    const dt=(i===0)?(+p.t_s||0):((+p.t_s||0)-(+hist[i-1].t_s||0));
+    _cumTok += tot*Math.max(0,dt);
+    p.mean_tps=((+p.t_s||0)>0)? _cumTok/(+p.t_s) : 0;
+  });
   lineChart("chartThr", hist,
-    [{key:"prompt_tps",color:"var(--cpu)",label:"prompt tok/s"},
-     {key:"decode_tps",color:"var(--npu)",label:"decode tok/s"}], fmsThr);
+    [{key:"mean_tps",color:"var(--accent)",label:"average throughput tok/s"}], fmsThr, axisOverride);
   // spill tiers = every tier present in history mem except NPU, canonical order
   const memKeys = hist.length ? Object.keys(hist[hist.length-1].mem||{}) : [];
   const spill = TIER_ORDER.filter(t=>t!=="NPU" && memKeys.includes(t));
-  stackChart("chartMem", hist, spill);
-  lineChart("chartTtft", hist, [{key:"ttft",color:"var(--flash)",label:"TTFT mean (ms) — by completion"}], fmsLat);
-  lineChart("chartTbt", hist, [{key:"tbt",color:"var(--jbof)",label:"TBT mean (ms)"}], fmsLat);
-  lineChart("chartTtftFt", hist, [{key:"ttft_ft",color:"var(--accent)",label:"TTFT @ first-token (ms)"}], fmsLat);
+  stackChart("chartMem", hist, spill, axisOverride);
+  lineChart("chartTtftMean", hist, [{key:"ttft",color:"#38bdf8",label:"Average TTFT (ms)"}], fmsLat, axisOverride);
+  lineChart("chartE2e", hist, [{key:"e2e",color:"#c084fc",label:"Average request completion time (ms)"}], fmsLat, axisOverride);
 
-  renderTiers(d.tiers||[]);
+  renderTiers(d.tiers||[], "tiers", false);   // full detail panel (below)
+  renderTiers(d.tiers||[], "tiersMini", true); // compact overall-only (hero-right)
 
   // ---- prefix cache + reload bars ---- //
   const pc=d.prefix_cache||{}, pctiers=pc.tiers||[];
   const maxRl=Math.max(1,...pctiers.map(x=>+x.reload_ms||0));
   const reloadBars = pctiers.length ? `<div class="sublead">Reload latency per tier</div><div class="devs">`+
     pctiers.map(x=>`<div class="dev" style="grid-template-columns:100px 1fr 90px">
-      <span class="sub" style="color:${tcol(x.name)}">${esc(x.name)}</span>
+      <span class="sub" style="color:${tcol(x.name)}">${octSpan(tdisp(x.name))}</span>
       <div class="bar db"><div style="width:${Math.min(100,100*(+x.reload_ms||0)/maxRl).toFixed(1)}%;background:${tcol(x.name)}"></div></div>
       <span class="amt" style="text-align:right">${(+x.reload_ms||0).toFixed(1)} ms</span></div>`).join("")+`</div>` : "";
   $("prefix").innerHTML=`<div class="sub" style="margin-bottom:8px">Overall hit ratio
@@ -489,7 +651,17 @@ async function poll(){
     of ${fi(pc.requested_tokens)} requested tokens</div><div id="pctab"></div>${reloadBars}`;
   renderTable($("pctab"),
     [{h:"tier",k:"name"},{h:"hit tokens",k:"hit"},{h:"hit %",k:"pct"},{h:"reload ms",k:"rl"}],
-    pctiers.map(x=>({name:x.name,hit:fi(x.hit_tokens),pct:(x.hit_pct||0).toFixed(2),rl:(x.reload_ms||0).toFixed(2)})),
+    pctiers.map(x=>({name:octSpan(tdisp(x.name)),hit:fi(x.hit_tokens),pct:(x.hit_pct||0).toFixed(2),rl:(x.reload_ms||0).toFixed(2)})),
+    r=>r.hit==="0");
+
+  // ---- compact prefix cache (hero-right): overall hit ratio + per-tier hits,
+  //      NO reload-latency bars and NO reload column (kept small for the half-pane) ---- //
+  $("prefixMini").innerHTML=`<div class="sub" style="margin-bottom:6px">Overall hit ratio
+    <b style="color:var(--txt);font-size:15px">${(pc.total_hit_ratio||0).toFixed(2)}%</b>
+    <span style="font-size:11px">of ${fi(pc.requested_tokens)} tok</span></div><div id="pctabMini"></div>`;
+  renderTable($("pctabMini"),
+    [{h:"tier",k:"name"},{h:"hit tokens",k:"hit"},{h:"hit %",k:"pct"}],
+    pctiers.map(x=>({name:octSpan(tdisp(x.name)),hit:fi(x.hit_tokens),pct:(x.hit_pct||0).toFixed(2)})),
     r=>r.hit==="0");
 
   const order=[["TTFT","ttft"],["TBT/token","tbt"],["ITL","itl"],["E2E","e2e"]];

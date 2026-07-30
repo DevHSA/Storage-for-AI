@@ -8,13 +8,13 @@
 :root{
   --bg:#0b0f14; --panel:#121821; --panel2:#0e141c; --line:#1e2733; --txt:#e6edf3;
   --muted:#8b98a5; --accent:#3fb950; --accent2:#58a6ff;
-  --npu:#3fb950; --cpu:#58a6ff; --flash:#d29922; --jbof:#bc8cff; --cold:#8b98a5;
+  --npu:#3fb950; --cpu:#58a6ff; --flash:#d29922; --jbof:#f2622e; --cold:#8b98a5;  /* OCTEON JBoF = orange */
   --warn:#d29922; --bad:#f85149; --codebg:#0d1117; --codetx:#a5d6ff;
 }
 body.light{
   --bg:#f6f8fa; --panel:#fff; --panel2:#eef1f4; --line:#d0d7de; --txt:#1f2328;
   --muted:#59636e; --accent:#1a7f37; --accent2:#0969da;
-  --npu:#1a7f37; --cpu:#0969da; --flash:#9a6700; --jbof:#8250df; --cold:#59636e;
+  --npu:#1a7f37; --cpu:#0969da; --flash:#9a6700; --jbof:#d75a2a; --cold:#59636e;  /* OCTEON JBoF = orange */
   --warn:#9a6700; --bad:#cf222e; --codebg:#f0f3f6; --codetx:#0550ae;
 }
 *{box-sizing:border-box}
@@ -90,8 +90,27 @@ select.full{width:100%}
 /* topology diagram (live boxes + connections) */
 .topo .th{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .topo .th h2{margin:0;flex:1}
-.diagWrap{overflow:auto;max-height:240px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.diagWrap{overflow:auto;height:var(--topoH,72vh);border:1px solid var(--line);border-radius:10px 10px 0 0;background:var(--panel2)}
 .topo.collapsed .diagWrap{display:none}
+/* drag-to-resize handle under the topology */
+.diagResize{height:14px;cursor:ns-resize;display:flex;align-items:center;justify-content:center;
+  color:var(--muted);user-select:none;background:var(--panel2);border:1px solid var(--line);border-top:0;
+  border-radius:0 0 10px 10px;font-size:11px;letter-spacing:3px;line-height:1}
+.diagResize:hover{color:var(--accent2);border-color:var(--accent2)}
+.topo.collapsed .diagResize{display:none}
+/* click-to-select in the topology */
+.dNode[data-sel],.dInst[data-sel],.dTier[data-sel],.dChip[data-sel],.dGpu[data-sel]{cursor:pointer}
+.dNode[data-sel]:hover,.dInst[data-sel]:hover,.dTier[data-sel]:hover,.dChip[data-sel]:hover,.dGpu[data-sel]:hover{filter:brightness(1.12)}
+.selected{outline:2px solid var(--accent);outline-offset:2px}
+.crumb{font-size:12px;color:var(--muted);margin-bottom:8px}
+.crumb a{cursor:pointer;color:var(--accent2)}.crumb a:hover{text-decoration:underline}
+.crumb b{color:var(--txt)}
+/* palette "more" dropdown */
+details.moreComps{margin-top:2px}
+details.moreComps>summary{cursor:pointer;color:var(--muted);font-size:12px;margin:4px 0 8px;list-style:none;user-select:none}
+details.moreComps>summary::-webkit-details-marker{display:none}
+details.moreComps>summary::before{content:"▸ "}
+details.moreComps[open]>summary::before{content:"▾ "}
 .diag{position:relative;padding:14px 14px 6px;min-width:max-content}
 .diagSvg{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 .dLink{fill:none;stroke:var(--jbof);stroke-width:2;opacity:.55}
@@ -131,86 +150,62 @@ select.full{width:100%}
       <div id="palette">
         <div class="palette-item" draggable="true" data-comp="node">
           <span class="dot" style="background:var(--accent2)"></span>
-          <div><b>Node</b><small>a server / rack unit</small></div>
+          <div><b>Node / Rack</b><small>a rack / server unit</small></div>
         </div>
         <div class="palette-item" draggable="true" data-comp="instance">
           <span class="dot" style="background:#d2a8ff"></span>
           <div><b>Instance</b><small>model on N GPUs (TP). Drop on a node</small></div>
         </div>
-        <div class="palette-item" draggable="true" data-comp="flash">
-          <span class="dot" style="background:var(--flash)"></span>
-          <div><b>FLASH</b><small>node-local NVMe tier. Drop on a node</small></div>
-        </div>
-        <div class="palette-item" draggable="true" data-comp="nodecpu">
-          <span class="dot" style="background:var(--cpu)"></span>
-          <div><b>Node CPU pool</b><small>host DRAM shared by the node (per_node). Drop on a node</small></div>
-        </div>
         <div class="palette-item" draggable="true" data-comp="instcpu">
           <span class="dot" style="background:var(--cpu)"></span>
-          <div><b>Instance CPU</b><small>host DRAM dedicated to one instance / superchip (per_instance). Drop on an instance</small></div>
+          <div><b>CPU DRAM</b><small>host DRAM per instance / superchip (per_instance). Drop on an instance</small></div>
         </div>
         <div class="palette-item" draggable="true" data-comp="jbof">
           <span class="dot" style="background:var(--jbof)"></span>
-          <div><b>JBOF</b><small>pod-wide pooled flash. Drop on Pod tiers</small></div>
+          <div><b>OCTEON JBoF</b><small>pod-wide pooled flash</small></div>
         </div>
         <div class="palette-item" draggable="true" data-comp="coldstore">
           <span class="dot" style="background:var(--cold)"></span>
-          <div><b>COLDSTORE</b><small>pod-wide network storage. Drop on Pod tiers</small></div>
+          <div><b>COLDSTORE</b><small>pod-wide network storage</small></div>
         </div>
+        <details class="moreComps">
+          <summary>more components</summary>
+          <div class="palette-item" draggable="true" data-comp="flash">
+            <span class="dot" style="background:var(--flash)"></span>
+            <div><b>FLASH</b><small>node-local NVMe tier. Drop on a node</small></div>
+          </div>
+          <div class="palette-item" draggable="true" data-comp="nodecpu">
+            <span class="dot" style="background:var(--cpu)"></span>
+            <div><b>Node CPU pool</b><small>host DRAM shared by the whole node (per_node). Drop on a node</small></div>
+          </div>
+        </details>
       </div>
-      <h2 style="margin-top:14px">Templates</h2>
-      <div class="row">
-        <button class="mini" data-tpl="blank">Blank</button>
-        <button class="mini" data-tpl="qwen">Qwen 2×2 +JBOF</button>
-        <button class="mini" data-tpl="vr">Vera Rubin tray</button>
-      </div>
+      <details class="moreComps" style="margin-top:14px">
+        <summary>templates</summary>
+        <div class="row">
+          <button class="mini" data-tpl="blank">Blank</button>
+          <button class="mini" data-tpl="qwen">Qwen 2×2 +JBOF</button>
+          <button class="mini" data-tpl="vr">Vera Rubin tray</button>
+        </div>
+      </details>
       <div class="hint" style="margin-top:8px">The <b>run command</b> on the right captures the flags that live outside the JSON.</div>
     </div>
   </div>
 
   <!-- ================= CANVAS ================= -->
   <div class="center">
-    <div class="card sticky topo" id="topoCard">
+    <div class="card topo" id="topoCard">
       <div class="th">
-        <h2>Topology <span class="small" style="font-weight:400;text-transform:none;letter-spacing:0">— live view · click/drop components here too</span></h2>
+        <h2>Topology <span class="small" style="font-weight:400;text-transform:none;letter-spacing:0">— click any component to edit it below · drop palette items here</span></h2>
         <button class="mini ghost" id="topoToggle">collapse</button>
       </div>
       <div class="diagWrap drop" data-drop="diagram" id="diagram"></div>
+      <div class="diagResize" id="diagResize" title="drag to resize the topology height">⋯⋯⋯</div>
     </div>
 
-    <div class="card" id="fabricCard">
-      <h2>Cluster fabric (root)</h2>
-      <div class="row">
-        <div>
-          <label class="f">Config filename</label>
-          <input type="text" data-scope="top" data-field="filename" id="fname">
-        </div>
-        <div>
-          <label class="f">Inter-node link BW (GB/s)</label>
-          <input type="number" data-scope="top" data-field="link_bw">
-        </div>
-        <div>
-          <label class="f">Inter-node link latency (ns)</label>
-          <input type="number" data-scope="top" data-field="link_latency">
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="row" style="align-items:center">
-        <h2 style="margin:0;flex:1">Pod-wide tiers <span class="small">(shared across all nodes)</span></h2>
-        <button class="mini" data-add="jbof">+ JBOF</button>
-        <button class="mini" data-add="coldstore">+ COLDSTORE</button>
-      </div>
-      <div class="drop" data-drop="pod" id="podzone" style="margin-top:8px"></div>
-    </div>
-
-    <div class="card">
-      <div class="row" style="align-items:center">
-        <h2 style="margin:0;flex:1">Nodes</h2>
-        <button class="mini" data-add="node">+ Node</button>
-      </div>
-      <div class="drop" data-drop="canvas" id="canvas" style="margin-top:8px;min-height:80px;padding:8px"></div>
+    <!-- single dynamic inspector: shows the knobs for whatever is selected in the topology -->
+    <div class="card" id="inspectorCard">
+      <div id="inspector"></div>
     </div>
   </div>
 
@@ -259,12 +254,14 @@ const CPU_PRESETS = {
   "small (32)":      [32,   1200, 120],
 };
 const JBOF_PRESETS = {
-  "Vera Rubin (256 TiB)": [262144, 64, 80000, 100, 2000],
-  "small (512 GiB)":      [512,    64, 80000, 100, 2000],
+  "OCTEON JBoF (200 GiB)": [200,    890, 8000,  28800, 1000],
+  "Vera Rubin (256 TiB)":  [262144, 64,  80000, 100,   2000],
+  "small (512 GiB)":       [512,    64,  80000, 100,   2000],
 };
 const COLD_PRESETS = {
-  "Vera Rubin (2 PiB)": [2097152, 4, 2000000, 16, 20000],
-  "small (4096 GiB)":   [4096,    4, 2000000, 16, 20000],
+  "COLDSTORE (200 GiB)": [200,     890, 5000000, 250, 7000],
+  "Vera Rubin (2 PiB)":  [2097152, 4,   2000000, 16,  20000],
+  "small (4096 GiB)":    [4096,    4,   2000000, 16,  20000],
 };
 const FLASH_PRESETS = { "NVMe (6 GiB node)": [6, 14, 10000, 0, 0] };
 const LINK_PRESETS = {
@@ -277,8 +274,10 @@ let uid = 0; const nid = () => "x" + (++uid);
 let state;
 function tier(preset){ return {mem_size:preset[0], mem_bw:preset[1], mem_latency:preset[2], link_bw:preset[3]||0, link_latency:preset[4]||0}; }
 function newInstance(){
-  return { id:nid(), model:"meta-llama/Llama-3.1-8B", hardware:"RTXPRO6000", tp_size:1,
-    npu:tier(NPU_PRESETS["RTX PRO 6000 (96)"]), cpu:null, pd_type:null,
+  return { id:nid(), model:"Qwen/Qwen3-32B", hardware:"RTXPRO6000", tp_size:2,
+    npu:{mem_size:36.5, mem_bw:22000, mem_latency:360, link_bw:0, link_latency:0},
+    cpu:{mem_size:4, mem_bw:12000, mem_latency:113},   // per-instance "CPU DRAM"
+    pd_type:null,
     adv:{ep_size:"", dp_group:"", num_npus:"", pp_size:"",
          place:{on:false, weights:"npu", kv_loc:"npu", kv_evict_loc:"cpu"},
          ovr:{on:false, max_num_seqs:"", block_size:"", dtype:"", kv_cache_dtype:"", enable_prefix_caching:""}} };
@@ -287,23 +286,23 @@ function newNode(){ return {id:nid(), cpu:null, flash:null, instances:[]}; }
 
 function tplBlank(){
   state = { filename:"my_cluster",
-    run:{dtype:"float16", block_size:16, prefix_storage:"None", tier_policy:"inclusive", cpu_scope:"per_node",
+    run:{dtype:"float16", block_size:16, prefix_storage:"None", tier_policy:"inclusive", cpu_scope:"per_instance",
          enable_prefix_caching:true, enable_prefix_sharing:false, max_num_seqs:0,
          dataset:"workloads/example_trace.jsonl", dashboard:true},
-    link_bw:1800, link_latency:1000, pod:{jbof:null, coldstore:null}, nodes:[] };
+    link_bw:1800, link_latency:1000, pod:{jbof:null, coldstore:null}, nodes:[], sel:{type:"cluster"} };
 }
 function tplQwen(){
   tplBlank();
   state.filename="qwen_2x2_jbof"; state.run.prefix_storage="JBOF"; state.run.enable_prefix_sharing=true;
   state.run.cpu_scope="per_instance"; state.run.max_num_seqs=8;
-  state.pod.jbof = tier(JBOF_PRESETS["small (512 GiB)"]);
-  state.pod.coldstore = tier(COLD_PRESETS["small (4096 GiB)"]);
+  state.pod.jbof = tier(JBOF_PRESETS["OCTEON JBoF (200 GiB)"]);
+  state.pod.coldstore = tier(COLD_PRESETS["COLDSTORE (200 GiB)"]);
   for(let n=0;n<2;n++){
     const node=newNode();
     for(let i=0;i<2;i++){
       const inst=newInstance();
       inst.model="Qwen/Qwen3-32B"; inst.hardware="RTXPRO6000"; inst.tp_size=2;
-      inst.npu=tier([62,22000,10]); inst.cpu={mem_size:8,mem_bw:1200,mem_latency:120};
+      inst.npu={mem_size:36.5,mem_bw:22000,mem_latency:360,link_bw:0,link_latency:0}; inst.cpu={mem_size:4,mem_bw:12000,mem_latency:113};
       node.instances.push(inst);
     }
     state.nodes.push(node);
@@ -405,41 +404,105 @@ function memFields(scope, id, m, withLink){
   if(withLink) h += `<div class="row">${f("link_bw","link BW (GB/s)",m.link_bw)}${f("link_latency","link lat (ns)",m.link_latency)}</div>`;
   return h;
 }
-function renderPod(){
-  const z = $("podzone"); const p = state.pod;
-  if(!p.jbof && !p.coldstore){ z.innerHTML = `<div class="emptyzone">drop <b>JBOF</b> / <b>COLDSTORE</b> here for a pod-wide pooled tier</div>`; return; }
-  let h="";
-  if(p.jbof) h += `<div class="podtier"><div class="hd"><span class="pill tag-jbof">JBOF</span><span class="small">pod-wide pool (split across nodes)</span><span class="spacer" style="flex:1"></span>${presetSel("pod-jbof",JBOF_PRESETS)}<button class="remove" data-del="pod-jbof">✕</button></div>${memFields("pod-jbof","",p.jbof,true)}</div>`;
-  if(p.coldstore) h += `<div class="podtier"><div class="hd"><span class="pill tag-cold">COLDSTORE</span><span class="small">pod-wide pool</span><span class="spacer" style="flex:1"></span>${presetSel("pod-coldstore",COLD_PRESETS)}<button class="remove" data-del="pod-coldstore">✕</button></div>${memFields("pod-coldstore","",p.coldstore,true)}</div>`;
-  z.innerHTML = h;
+// ---- selection: which component the single inspector pane edits ---- //
+function parseSel(spec){ const [type,id]=String(spec).split(":"); return {type, id}; }
+function selKey(){ const s=state.sel||{type:"cluster"}; return s.type+(s.id?(":"+s.id):""); }
+function selResolve(){
+  const s=state.sel||{type:"cluster"};
+  if(s.type==="cluster") return {type:"cluster"};
+  if(s.type==="pod-jbof")      return state.pod.jbof?      {type:"pod-jbof"}      : null;
+  if(s.type==="pod-coldstore") return state.pod.coldstore? {type:"pod-coldstore"} : null;
+  if(s.type==="node"||s.type==="nodecpu"||s.type==="nodeflash"){
+    const ni=state.nodes.findIndex(n=>n.id===s.id); if(ni<0) return null;
+    const n=state.nodes[ni];
+    if(s.type==="nodecpu"   && !n.cpu)   return null;
+    if(s.type==="nodeflash" && !n.flash) return null;
+    return {type:s.type, n, ni};
+  }
+  if(s.type==="inst"){
+    for(let ni=0;ni<state.nodes.length;ni++){ const n=state.nodes[ni]; const ii=n.instances.findIndex(x=>x.id===s.id);
+      if(ii>=0) return {type:"inst", n, ni, i:n.instances[ii], ii}; }
+    return null;
+  }
+  return null;
 }
-function renderCanvas(){
-  const c = $("canvas");
-  if(!state.nodes.length){ c.innerHTML = `<div class="emptyzone">drop a <b>Node</b> here to begin (or click <b>+ Node</b>)</div>`; return; }
-  c.innerHTML = state.nodes.map((n,ni)=>{
-    let inner="";
-    // node CPU / FLASH
-    if(n.cpu) inner += `<div class="grp"><div class="gh">Node CPU pool <span class="badge">host DRAM</span> <button class="remove" data-del="nodecpu:${n.id}">✕</button> ${presetSel("nodecpu:"+n.id,CPU_PRESETS)}</div>${memFields("nodecpu:"+n.id,n.id,n.cpu,false)}</div>`;
-    if(n.flash) inner += `<div class="grp"><div class="gh"><span class="pill tag-flash">FLASH</span> node-local <button class="remove" data-del="nodeflash:${n.id}">✕</button> ${presetSel("nodeflash:"+n.id,FLASH_PRESETS)}</div>${memFields("nodeflash:"+n.id,n.id,n.flash,true)}</div>`;
-    // instances
-    inner += n.instances.map((i,ii)=>renderInst(n,i,ii)).join("");
-    if(!n.instances.length) inner += `<div class="emptyzone">drop an <b>Instance</b> here</div>`;
-    return `<div class="node drop" data-drop="node:${n.id}">
-      <div class="hd"><span class="pill tag-node">Node ${ni}</span>
-        <span class="small">${n.instances.length} instance(s)</span>
-        <span class="spacer" style="flex:1"></span>
-        <button class="mini" data-add="instance:${n.id}">+ Instance</button>
-        <button class="mini" data-add="flash:${n.id}">+ FLASH</button>
-        <button class="mini" data-add="nodecpu:${n.id}">+ CPU</button>
-        <button class="remove" data-del="node:${n.id}">✕ node</button></div>
-      ${inner}</div>`;
-  }).join("");
+function selectComp(spec){ state.sel=parseSel(spec); render(); }
+
+// ---- inspector editors (single dynamic pane below the topology) ---- //
+function crumb(html){ return `<div class="crumb">${html}</div>`; }
+function tierKnobs(tagClass, tagLabel, scope, id, m, withLink, presetKind, presetMap, delSpec, note){
+  return `<div class="podtier">
+    <div class="hd"><span class="pill ${tagClass}">${esc(tagLabel)}</span>
+      <span class="small">${note||""}</span>
+      <span class="spacer" style="flex:1"></span>
+      ${presetMap?presetSel(presetKind,presetMap):""}
+      ${delSpec?`<button class="remove" data-del="${delSpec}">✕ remove</button>`:""}</div>
+    ${memFields(scope,id,m,withLink)}</div>`;
+}
+function clusterEditor(){
+  return `<h2 style="margin:0 0 6px">Cluster / root
+      <span class="small" style="text-transform:none;font-weight:400;letter-spacing:0">— click any component in the topology above to edit it</span></h2>
+    <div class="row">
+      <div><label class="f">Config filename</label><input type="text" data-scope="top" data-field="filename" value="${esc(state.filename)}"></div>
+      <div><label class="f">Inter-node link BW (GB/s)</label><input type="number" data-scope="top" data-field="link_bw" value="${esc(state.link_bw)}"></div>
+      <div><label class="f">Inter-node link latency (ns)</label><input type="number" data-scope="top" data-field="link_latency" value="${esc(state.link_latency)}"></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="mini" data-add="node">+ Node / Rack</button>
+      <button class="mini" data-add="jbof">+ OCTEON JBoF</button>
+      <button class="mini" data-add="coldstore">+ COLDSTORE</button>
+    </div>
+    ${runSettingsUI()}`;
+}
+function nodeEditor(n,ni){
+  let h = crumb(`<a data-sel="cluster">Cluster</a> ▸ <b>Node / Rack ${ni}</b>`);
+  h += `<div class="row" style="align-items:center;margin:2px 0 8px">
+      <span class="pill tag-node">Node / Rack ${ni}</span>
+      <span class="small">${n.instances.length} instance(s)</span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="mini" data-add="instance:${n.id}">+ Instance</button>
+      <button class="mini" data-add="flash:${n.id}">+ FLASH</button>
+      <button class="mini" data-add="nodecpu:${n.id}">+ Node CPU pool</button>
+      <button class="remove" data-del="node:${n.id}">✕ remove node</button></div>`;
+  if(n.cpu)   h += tierKnobs("tag-cpu","Node CPU pool","nodecpu:"+n.id,n.id,n.cpu,false,"nodecpu:"+n.id,CPU_PRESETS,"nodecpu:"+n.id,"host DRAM shared by the whole node (per_node)");
+  if(n.flash) h += tierKnobs("tag-flash","FLASH","nodeflash:"+n.id,n.id,n.flash,true,"nodeflash:"+n.id,FLASH_PRESETS,"nodeflash:"+n.id,"node-local NVMe tier");
+  h += `<div class="grp"><div class="gh">Instances — click to edit</div>`;
+  h += n.instances.length
+    ? n.instances.map((i,ii)=>`<button class="mini" data-sel="inst:${i.id}" style="margin:2px">Instance ${ii} · ${esc((i.model||'?').split('/').pop())} · TP${num(i.tp_size,1)}</button>`).join("")
+    : `<div class="small">no instances yet — click <b>+ Instance</b></div>`;
+  h += `</div>`;
+  return h;
+}
+function instEditor(r){
+  return crumb(`<a data-sel="cluster">Cluster</a> ▸ <a data-sel="node:${r.n.id}">Node / Rack ${r.ni}</a> ▸ <b>Instance ${r.ii}</b>`)
+    + renderInst(r.n, r.i, r.ii);
+}
+function inspectorHtml(r){
+  switch(r.type){
+    case "node": return nodeEditor(r.n, r.ni);
+    case "inst": return instEditor(r);
+    case "nodecpu": return crumb(`<a data-sel="cluster">Cluster</a> ▸ <a data-sel="node:${r.n.id}">Node / Rack ${r.ni}</a> ▸ <b>Node CPU pool</b>`)
+      + tierKnobs("tag-cpu","Node CPU pool","nodecpu:"+r.n.id,r.n.id,r.n.cpu,false,"nodecpu:"+r.n.id,CPU_PRESETS,"nodecpu:"+r.n.id,"host DRAM shared by the whole node (per_node)");
+    case "nodeflash": return crumb(`<a data-sel="cluster">Cluster</a> ▸ <a data-sel="node:${r.n.id}">Node / Rack ${r.ni}</a> ▸ <b>FLASH</b>`)
+      + tierKnobs("tag-flash","FLASH","nodeflash:"+r.n.id,r.n.id,r.n.flash,true,"nodeflash:"+r.n.id,FLASH_PRESETS,"nodeflash:"+r.n.id,"node-local NVMe tier");
+    case "pod-jbof": return crumb(`<a data-sel="cluster">Cluster</a> ▸ <b>OCTEON JBoF</b>`)
+      + tierKnobs("tag-jbof","OCTEON JBoF","pod-jbof","",state.pod.jbof,true,"pod-jbof",JBOF_PRESETS,"pod-jbof","pod-wide pooled flash (shared across nodes)");
+    case "pod-coldstore": return crumb(`<a data-sel="cluster">Cluster</a> ▸ <b>COLDSTORE</b>`)
+      + tierKnobs("tag-cold","COLDSTORE","pod-coldstore","",state.pod.coldstore,true,"pod-coldstore",COLD_PRESETS,"pod-coldstore","pod-wide network storage");
+    default: return clusterEditor();
+  }
+}
+function renderInspector(){
+  const el=$("inspector"); if(!el) return;
+  let r=selResolve();
+  if(!r){ state.sel={type:"cluster"}; r={type:"cluster"}; }
+  el.innerHTML = inspectorHtml(r);
 }
 function renderInst(n,i,ii){
   const a=i.adv;
   const cpuBlock = i.cpu
-    ? `<div class="grp"><div class="gh"><span class="pill tag-cpu">CPU</span> per-instance <button class="remove" data-del="instcpu:${i.id}">✕</button></div>${memFields("instcpu:"+i.id,i.id,i.cpu,false)}</div>`
-    : `<button class="mini ghost" data-add="instcpu:${i.id}" style="margin-top:6px">+ per-instance CPU</button>`;
+    ? `<div class="grp"><div class="gh"><span class="pill tag-cpu">CPU DRAM</span> per-instance <button class="remove" data-del="instcpu:${i.id}">✕</button></div>${memFields("instcpu:"+i.id,i.id,i.cpu,false)}</div>`
+    : `<button class="mini ghost" data-add="instcpu:${i.id}" style="margin-top:6px">+ CPU DRAM</button>`;
   return `<div class="inst drop" data-drop="inst:${i.id}">
     <div class="hd"><span class="pill tag-inst">Instance ${ii}</span>
       <span class="spacer" style="flex:1"></span>
@@ -480,7 +543,7 @@ function renderInst(n,i,ii){
     </details>
   </div>`;
 }
-function render(){ renderPod(); renderCanvas(); renderDiagram(); emit(); }
+function render(){ renderDiagram(); renderInspector(); emit(); }
 
 // ------------------------------------------------------ live topology diagram ---
 function renderDiagram(){
@@ -489,20 +552,23 @@ function renderDiagram(){
     host.innerHTML=`<div class="emptyzone" style="padding:24px">Click or drop a <b>Node</b>, then an <b>Instance</b> — the topology draws here as you build (boxes = components, lines = the shared tier chain).</div>`;
     return;
   }
+  const SK=selKey();  // currently-selected component (for highlight)
+  const sc=(spec)=>spec===SK?" selected":"";
   const nodesHtml = state.nodes.map((n,ni)=>{
     const insts = n.instances.map((i,ii)=>{
       const tp=num(i.tp_size,1)||1;
       const short=(i.model||"?").split("/").pop();
       const shown=Math.min(tp,8);
       const gpus=Array.from({length:shown},()=>`<span class="dGpu" title="NPU ${num(i.npu.mem_size)} GiB">NPU</span>`).join("")+(tp>shown?`<span class="dMore">+${tp-shown}</span>`:"");
-      const cpuChip=i.cpu?`<span class="dChip cpu" title="per-instance CPU">CPU ${num(i.cpu.mem_size)}G</span>`:"";
-      return `<div class="dInst"><div class="dLbl"><b>${esc(short)}</b> · TP${tp}${cpuChip}</div><div class="dGpus">${gpus}</div></div>`;
+      const cpuChip=i.cpu?`<span class="dChip cpu" title="CPU DRAM (per-instance) — click the instance to edit">CPU ${num(i.cpu.mem_size)}G</span>`:"";
+      return `<div class="dInst${sc("inst:"+i.id)}" data-sel="inst:${i.id}" data-drop="inst:${i.id}" title="click to edit this instance"><div class="dLbl"><b>${esc(short)}</b> · TP${tp}${cpuChip}</div><div class="dGpus">${gpus}</div></div>`;
     }).join("") || `<div class="dEmpty">no instances yet</div>`;
-    const tiers=(n.cpu?`<span class="dChip cpu">CPU ${num(n.cpu.mem_size)}G</span>`:"")+(n.flash?`<span class="dChip flash">FLASH ${num(n.flash.mem_size)}G</span>`:"");
-    return `<div class="dNode"><div class="dNodeHd">Node ${ni}</div>${insts}${tiers?`<div class="dNodeTiers">${tiers}</div>`:""}</div>`;
+    const tiers=(n.cpu?`<span class="dChip cpu${sc("nodecpu:"+n.id)}" data-sel="nodecpu:${n.id}" title="click to edit the Node CPU pool">CPU ${num(n.cpu.mem_size)}G</span>`:"")
+              +(n.flash?`<span class="dChip flash${sc("nodeflash:"+n.id)}" data-sel="nodeflash:${n.id}" title="click to edit FLASH">FLASH ${num(n.flash.mem_size)}G</span>`:"");
+    return `<div class="dNode${sc("node:"+n.id)}" data-sel="node:${n.id}" data-drop="node:${n.id}"><div class="dNodeHd">Node / Rack ${ni}</div>${insts}${tiers?`<div class="dNodeTiers">${tiers}</div>`:""}</div>`;
   }).join("");
-  const pod=(state.pod.jbof?`<div class="dTier jbof">JBOF · ${num(state.pod.jbof.mem_size)} GiB · pod-wide pool</div>`:"")
-          +(state.pod.coldstore?`<div class="dTier cold">COLDSTORE · ${num(state.pod.coldstore.mem_size)} GiB · pod-wide pool</div>`:"");
+  const pod=(state.pod.jbof?`<div class="dTier jbof${sc("pod-jbof")}" data-sel="pod-jbof">OCTEON JBoF · ${num(state.pod.jbof.mem_size)} GiB · pod-wide pool</div>`:"")
+          +(state.pod.coldstore?`<div class="dTier cold${sc("pod-coldstore")}" data-sel="pod-coldstore">COLDSTORE · ${num(state.pod.coldstore.mem_size)} GiB · pod-wide pool</div>`:"");
   host.innerHTML=`<div class="diag"><div class="dNodes">${nodesHtml||'<div class="dEmpty">no nodes</div>'}</div>${pod?`<div class="dPod">${pod}</div>`:""}<svg class="diagSvg"></svg></div>`;
   drawConnectors();
 }
@@ -614,13 +680,15 @@ function runCommand(){
 function findInst(id){ for(const n of state.nodes){ const i=n.instances.find(x=>x.id===id); if(i) return {n,i}; } return {}; }
 function findNode(id){ return state.nodes.find(n=>n.id===id); }
 function addComp(comp, targetId){
-  if(comp==="node"){ state.nodes.push(newNode()); }
-  else if(comp==="instance"){ const n=findNode(targetId)||state.nodes[state.nodes.length-1]; if(n) n.instances.push(newInstance()); else { const nn=newNode(); nn.instances.push(newInstance()); state.nodes.push(nn); } }
-  else if(comp==="flash"){ const n=findNode(targetId); if(n && !n.flash) n.flash=tier(FLASH_PRESETS["NVMe (6 GiB node)"]); }
-  else if(comp==="nodecpu"){ const n=findNode(targetId); if(n && !n.cpu) n.cpu={mem_size:CPU_PRESETS["small (32)"][0],mem_bw:1200,mem_latency:120}; }
-  else if(comp==="instcpu"){ const {i}=findInst(targetId); if(i && !i.cpu) i.cpu={mem_size:8,mem_bw:1200,mem_latency:120}; }
-  else if(comp==="jbof"){ if(!state.pod.jbof) state.pod.jbof=tier(JBOF_PRESETS["small (512 GiB)"]); }
-  else if(comp==="coldstore"){ if(!state.pod.coldstore) state.pod.coldstore=tier(COLD_PRESETS["small (4096 GiB)"]); }
+  let sel=null;
+  if(comp==="node"){ const n=newNode(); state.nodes.push(n); sel={type:"node",id:n.id}; }
+  else if(comp==="instance"){ let n=findNode(targetId)||state.nodes[state.nodes.length-1]; if(!n){ n=newNode(); state.nodes.push(n); } const inst=newInstance(); n.instances.push(inst); sel={type:"inst",id:inst.id}; }
+  else if(comp==="flash"){ const n=findNode(targetId); if(n && !n.flash){ n.flash=tier(FLASH_PRESETS["NVMe (6 GiB node)"]); sel={type:"nodeflash",id:n.id}; } }
+  else if(comp==="nodecpu"){ const n=findNode(targetId); if(n && !n.cpu){ n.cpu={mem_size:CPU_PRESETS["small (32)"][0],mem_bw:1200,mem_latency:120}; sel={type:"nodecpu",id:n.id}; } }
+  else if(comp==="instcpu"){ const {i}=findInst(targetId); if(i && !i.cpu){ i.cpu={mem_size:4,mem_bw:12000,mem_latency:113}; sel={type:"inst",id:i.id}; } }
+  else if(comp==="jbof"){ if(!state.pod.jbof) state.pod.jbof=tier(JBOF_PRESETS["OCTEON JBoF (200 GiB)"]); sel={type:"pod-jbof"}; }
+  else if(comp==="coldstore"){ if(!state.pod.coldstore) state.pod.coldstore=tier(COLD_PRESETS["COLDSTORE (200 GiB)"]); sel={type:"pod-coldstore"}; }
+  if(sel) state.sel=sel;
   render();
 }
 // add a component to the most sensible target (used by click-to-add and the topology drop zone):
@@ -728,17 +796,7 @@ let flashT;
 function flash(msg,bad){ const s=$("saveStatus"); s.textContent=msg; s.style.color=bad?"var(--bad)":"var(--accent)"; clearTimeout(flashT); flashT=setTimeout(()=>s.textContent="",4000); }
 
 // --------------------------------------------------------------- wiring -----
-function mountFabricExtras(){
-  // inject run-settings into the fabric card
-  const fabric=$("fabricCard");
-  let box=$("runsettings");
-  if(!box){ box=document.createElement("div"); box.id="runsettings"; fabric.appendChild(box); }
-  box.innerHTML=runSettingsUI();
-  // top field values
-  $("fname").value=state.filename;
-  fabric.querySelector('[data-field="link_bw"]').value=state.link_bw;
-  fabric.querySelector('[data-field="link_latency"]').value=state.link_latency;
-}
+// (fabric root + run settings now live in the inspector's Cluster view)
 // palette: DRAG (setData) + CLICK-to-add (no scrolling required)
 $("palette").addEventListener("dragstart",e=>{ const it=e.target.closest("[data-comp]"); if(it) e.dataTransfer.setData("comp",it.dataset.comp); });
 $("palette").addEventListener("click",e=>{ const it=e.target.closest("[data-comp]"); if(it){ addSmart(it.dataset.comp); flash("added "+it.dataset.comp); } });
@@ -776,10 +834,24 @@ document.addEventListener("drop",e=>{
 });
 // redraw connector lines when layout width changes
 window.addEventListener("resize",()=>drawConnectors());
+// drag-to-resize the topology height (persisted)
+(function(){
+  const wrap=$("diagram"), handle=$("diagResize"); if(!wrap||!handle) return;
+  const setH=px=>wrap.style.setProperty("--topoH", px+"px");   // drives .diagWrap{height:var(--topoH,72vh)}
+  try{ const h=parseFloat(localStorage.getItem("llmss-topoH")); if(h>0) setH(h); }catch(e){}
+  let drag=null;
+  handle.addEventListener("mousedown",e=>{ e.preventDefault(); drag={y:e.clientY, h:wrap.getBoundingClientRect().height}; document.body.style.userSelect="none"; });
+  document.addEventListener("mousemove",e=>{ if(!drag) return;
+    let nh=drag.h+(e.clientY-drag.y); nh=Math.max(160, Math.min(nh, window.innerHeight*0.92));
+    setH(nh); });
+  document.addEventListener("mouseup",()=>{ if(!drag) return; drag=null; document.body.style.userSelect="";
+    try{ localStorage.setItem("llmss-topoH", parseFloat(getComputedStyle(wrap).height)); }catch(e){} drawConnectors(); });
+})();
 // clicks: add / delete / preset are handled below via change+click delegation
 document.addEventListener("click",e=>{
   const add=e.target.closest("[data-add]"); if(add){ const [c,id]=add.dataset.add.split(":"); addComp(c,id); return; }
   const del=e.target.closest("[data-del]"); if(del){ delComp(del.dataset.del); return; }
+  const sel=e.target.closest("[data-sel]"); if(sel){ selectComp(sel.dataset.sel); return; }  // topology click / breadcrumb
 });
 document.addEventListener("input",e=>{ if(e.target.matches("[data-scope]")) setField(e.target); });
 document.addEventListener("change",e=>{
@@ -797,7 +869,7 @@ $("themeBtn").onclick=()=>{ theme=(theme==="light"?"dark":"light"); try{ localSt
 // served-mode → reveal Save-to-disk
 if(location.protocol!=="file:") $("saveBtn").style.display="";
 
-function boot(){ mountFabricExtras(); render(); }
+function boot(){ if(!state.sel) state.sel={type:"cluster"}; render(); }
 // init: restore or blank
 try{ const saved=localStorage.getItem("llmss-cfgbuilder");
   if(saved){ state=JSON.parse(saved); let mx=0;

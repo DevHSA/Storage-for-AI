@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLMServingSim - Cross Rack KV Cache Reuse using OCTEON JBoF Memory Tier — Run comparison (V3)</title>
+<style>
+  :root{
+    /* near-black neutral bg + warm-orange accent + steel-slate labels + teal metadata */
+    --bg:#0a0a0c; --panel:#111114; --panel2:#0d0d10; --line:#26262b;
+    --txt:#f1f2f5; --muted:#838ea8; --accent:#f2622e; --accent2:#58a6ff;
+    --meta:#6f9585;
+    --npu:#3fb950; --cpu:#58a6ff; --flash:#d29922; --jbof:#bc8cff; --cold:#8b98a5;
+    --warn:#d29922; --bad:#f85149; --codebg:#0d0d10; --codetx:#a5d6ff;
+    --run1:#f1f2f5; --run2:#f2622e;
+  }
+  body.light{
+    --bg:#f6f8fa; --panel:#ffffff; --panel2:#eef1f4; --line:#d0d7de;
+    --txt:#1f2328; --muted:#59636e; --accent:#d75a2a; --accent2:#0969da;
+    --meta:#3f7a5c;
+    --npu:#1a7f37; --cpu:#0969da; --flash:#9a6700; --jbof:#8250df; --cold:#59636e;
+    --warn:#9a6700; --bad:#cf222e; --codebg:#f0f3f6; --codetx:#0550ae;
+    --run1:#1f2328; --run2:#d75a2a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);transition:background .2s,color .2s;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:14px;line-height:1.5}
+  .wrap{max-width:1500px;margin:0 auto;padding:18px 22px 60px}
+  h1{font-size:16px;margin:0;min-width:0;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    margin:26px 0 10px;font-weight:700}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:nowrap}
+  .ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:0 0 auto}
+  .btn,select{background:var(--panel);color:var(--txt);border:1px solid var(--line);
+    border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+  .btn:hover{border-color:var(--accent2)}
+  .pill{display:inline-block;padding:2px 12px;border-radius:20px;font-size:12px;font-weight:700}
+  .st-running{background:rgba(242,98,46,.16);color:#ff7a45;border:1px solid #c2410c}
+  .st-done{background:rgba(88,166,255,.18);color:#79c0ff;border:1px solid #388bfd}
+  .st-starting{background:rgba(210,153,34,.18);color:#e3b341;border:1px solid #bb8009}
+  .st-waiting,.st-error{background:rgba(139,152,165,.15);color:#8b98a5;border:1px solid #30363d}
+  .st-error{color:#ff7b72;border-color:#da3633}
+  .sub{color:var(--muted);font-size:12.5px}
+  code{background:var(--codebg);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12px;color:var(--codetx)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:1000px){.grid2{grid-template-columns:1fr}}
+  table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+  th,td{text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+  .foot{color:var(--meta);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+    text-transform:uppercase;letter-spacing:.05em;margin-top:26px;border-top:1px solid var(--line);padding-top:10px}
+  .sublead{color:var(--muted);font-size:11px;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+  /* tier list (memory by tier) */
+  .tier{margin:0 0 10px}
+  .tier .hd{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px}
+  .tier .nm{font-weight:700}
+  .scope{font-size:10.5px;padding:1px 8px;border-radius:12px;border:1px solid var(--line);color:var(--muted)}
+  .scope.pooled{color:var(--accent2);border-color:var(--accent2)}
+  .bar{height:12px;background:var(--codebg);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .bar > div{height:100%;transition:width .4s}
+  .tier .amt{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  /* timeline */
+  .tl-card{margin-top:10px;padding:12px 16px}
+  .tl-head{display:flex;justify-content:space-between;align-items:baseline;font-weight:600;font-size:14px;margin-bottom:2px}
+  .tl-legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:8px;font-size:12px;color:var(--muted)}
+  .tl-ev{display:flex;align-items:center;gap:5px}
+  .tl-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+  /* V3: lean full-width two-run summary — one box, two columns */
+  .runsum{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:12px;
+    border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+  @media(max-width:800px){.runsum{grid-template-columns:1fr}}
+  .runsum .rs{padding:9px 16px;border-left:1px solid var(--line);border-top:3px solid var(--line)}
+  .runsum .rs:first-child{border-left:0}
+  .runsum .rs.r1{border-top-color:var(--run1)}
+  .runsum .rs.r2{border-top-color:var(--run2)}
+  .runsum .rn{font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .runsum .meta{color:var(--muted);font-size:12px;margin-top:3px}
+  .runsum .meta b{color:var(--txt);font-weight:600}
+  .runsum .ml{font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.8}
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:middle}
+  /* V3: key-metric tiles (2 runs x 4 metrics) — distinct centered tiles */
+  .cmpgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;grid-template-rows:auto repeat(4,1fr)}
+  .cmphdr{font-size:12px;font-weight:700;text-align:center;padding:0 2px 2px}
+  .cmpcell{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:6px 8px;
+    text-align:center;display:flex;flex-direction:column;gap:2px;align-items:center;justify-content:center}
+  .cmpcell .cl{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);line-height:1.15}
+  .cmpcell .cv{font-size:20px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  /* V3: improvement tiles (3, one compact row) */
+  .impgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;flex:1 1 auto;min-height:0}
+  .impcell{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 8px;
+    text-align:center;display:flex;flex-direction:column;gap:5px;align-items:center;justify-content:center}
+  .impcell .il{font-size:11px;color:var(--txt);line-height:1.25;font-weight:600}
+  .impcell .il .s{display:block;font-size:10px;color:var(--muted);font-weight:400}
+  .impcell .iv{font-size:23px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.05}
+  .impcell .iw{font-size:11px;color:var(--muted)}
+  /* v3 right column stretches to the plots' height; improvement grows to fill the bottom */
+  .v3side{display:flex;flex-direction:column;min-height:0}
+  /* V3: main two-column region — plots on the left, key-metrics + improvement on the right */
+  .v3main{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:18px;margin-top:12px}
+  @media(max-width:1050px){.v3main{grid-template-columns:1fr}}
+  .v3h{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
+  .v3side .v3h{margin-top:16px}
+  .v3side .v3h:first-child{margin-top:0}
+  /* plots: TTFT spans the left half (tall); throughput + E2E stacked on the right half.
+     The grid has a FIXED height so hiding E2E never changes the column height (and thus
+     never changes the right-hand panes' height); the plots fill their cells via flex. */
+  .v3plots{display:flex;flex-direction:column;min-height:0}
+  .plotgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;height:min(58vh,460px);min-height:300px}
+  @media(max-width:600px){.plotgrid{grid-template-columns:1fr;height:auto;min-height:0}}
+  .plotgrid > .qtile{display:flex;flex-direction:column;min-height:0}
+  .plotstack{display:grid;grid-template-rows:1fr 1fr;gap:12px;min-height:0}
+  .plotstack > .qtile{display:flex;flex-direction:column;min-height:0}
+  #chartTtft,#chartThr,#chartE2e{flex:1 1 auto;min-height:0}
+  .qtile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .qh{font-size:11px;font-weight:700;margin:0 0 5px;display:flex;align-items:center;gap:6px;color:var(--txt)}
+  .qh .sub{font-size:9.5px}
+  .good{color:#4ade80}.bad2{color:#f87171}.neu{color:var(--muted)}
+  .colrun1{color:var(--run1)}.colrun2{color:var(--run2)}
+  /* OCTEON JBoF brand highlight — gentle pulse so it stands out */
+  .octeon{font-weight:700;white-space:nowrap;animation:octpulse 1.8s ease-in-out infinite}
+  @keyframes octpulse{0%,100%{opacity:1;text-shadow:none}50%{opacity:.62;text-shadow:0 0 7px currentColor}}
+  /* CT toggle: swaps the third slot between Average request completion time and P90 TTFT
+     across the plot, Key metrics, and Improvement. Layout (plot/tile/row count) is unchanged. */
+  .e2etgl{font-size:11px;padding:3px 7px;font-weight:700;letter-spacing:.03em;white-space:nowrap;line-height:1}
+  .e2etgl.off{opacity:.7;border-style:dashed}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>📊 LLMServingSim - Cross Rack KV Cache Reuse using OCTEON JBoF Memory Tier</h1>
+    <div class="ctl">
+      <span id="status" class="pill st-waiting">waiting</span>
+      <span id="wall" class="sub"></span>
+      <label class="sub">refresh
+        <select id="refresh">
+          <option value="1000">1 s</option><option value="1500">1.5 s</option>
+          <option value="3000">3 s</option><option value="5000">5 s</option><option value="10000">10 s</option>
+        </select></label>
+      <button id="e2eBtn" class="btn e2etgl" title="Toggle the third metric: Average request completion time (CT) ⇄ P90 TTFT — plot, Key metrics, improvement">CT</button>
+      <button id="themeBtn" class="btn">☀️ Light</button>
+    </div>
+  </div>
+
+  <!-- (1) lean full-width two-run summary -->
+  <div id="banner" class="runsum"></div>
+
+  <!-- (2) simulation timeline, two tracks -->
+  <div id="simtimeline" class="card tl-card"><div class="sub">⏱️ Simulation timeline — waiting for runs…</div></div>
+
+  <!-- (3) main region: plots (left) + key-metrics & improvement (right) -->
+  <div class="v3main">
+    <div class="v3plots">
+      <h2 class="v3h">⚡ Performance over sim time
+        <span class="sub" style="font-weight:400;text-transform:none;letter-spacing:0">— <span class="colrun1">■ Run 1</span> vs <span class="colrun2">■ Run 2</span></span></h2>
+      <div class="plotgrid">
+        <div class="qtile"><div class="qh">⏱️ Average TTFT <span class="sub" style="font-weight:400">(ms)</span></div><div id="chartTtft"></div></div>
+        <div class="plotstack">
+          <div class="qtile"><div class="qh">⚡ Average throughput <span class="sub" style="font-weight:400">(tok/s)</span></div><div id="chartThr"></div></div>
+          <div id="e2eTile" class="qtile"><div class="qh" id="e2eTitle">⏱️ Average request completion time <span class="sub" style="font-weight:400">(ms)</span></div><div id="chartE2e"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="v3side">
+      <h2 class="v3h">📊 Key metrics — Run 1 vs Run 2</h2>
+      <div id="cmptiles" class="cmpgrid"></div>
+      <h2 class="v3h">📈 Improvement — Run 2 vs Run 1</h2>
+      <div id="imptiles" class="impgrid"></div>
+    </div>
+  </div>
+
+  <!-- (5) memory by tier, separate per run -->
+  <h2>🧠 Memory by tier</h2>
+  <div class="grid2">
+    <div><div class="sublead" id="memName1">Run 1</div><div class="card"><div id="tiersRun1"></div></div></div>
+    <div><div class="sublead" id="memName2">Run 2</div><div class="card"><div id="tiersRun2"></div></div></div>
+  </div>
+
+  <div id="foot" class="foot"></div>
+</div>
+
+<script>
+const TIER_COLOR = {NPU:"var(--npu)",CPU:"var(--cpu)",FLASH:"var(--flash)",JBOF:"var(--jbof)",COLDSTORE:"var(--cold)"};
+const TIER_ORDER = ["NPU","CPU","FLASH","JBOF","COLDSTORE"];
+const $ = id => document.getElementById(id);
+const fi = n => (n==null?"0":Math.round(n).toLocaleString());
+function fb(b){ b=+b||0; const u=[["TB",2**40],["GB",2**30],["MB",2**20],["KB",2**10]];
+  for(const [n,d] of u){ if(b>=d) return (b/d).toFixed(2)+" "+n; } return b.toFixed(0)+" B"; }
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+const fmsThr = v => v>=1000?(v/1000).toFixed(1)+"k":Math.round(v);
+const fmsLat = v => v>=1000?(v/1000).toFixed(2)+"s":v.toFixed(1);
+const tcol = t => TIER_COLOR[t]||"var(--accent)";
+const collecting = () => `<div class="sub" style="padding:26px 4px">Collecting samples…
+  (needs ≥2 log intervals — lower <code>--log-interval</code>, or run 2 not started yet.)</div>`;
+// "OCTEON JBoF" branding: show the JBOF tier as "OCTEON JBoF" (data key stays "JBOF");
+// octSpan wraps it in a gently-pulsing highlight for HTML contexts.
+const tdisp = n => (n==="JBOF" ? "OCTEON JBoF" : n);
+function octSpan(str){ return esc(str).split("OCTEON JBoF").join('<span class="octeon">OCTEON JBoF</span>'); }
+
+// milestone marker palette (matches V2): cool lifecycle, warm spill escalation, green complete
+// bright, maximally-distinct milestone colours (Material accent-ish) — vivid on dark
+const EVENT_MAP = {
+  first_arrival:     {label:"First request arrival",  color:"#00e5ff"},  // bright cyan
+  first_token:       {label:"First token generated",  color:"#536dfe"},  // bright indigo
+  first_finish:      {label:"First request completed", color:"#e040fb"}, // bright magenta
+  jbof_spill:        {label:"OCTEON JBoF spill begins", color:"#ff9100"},  // bright orange
+  coldstore_spill:   {label:"COLDSTORE spill begins", color:"#ff1744"},  // bright red
+  run_complete:      {label:"Run complete",           color:"#00e676"},  // bright green
+};
+
+// Run name = the memory tiers it enables (e.g. "NPU→CPU→JBOF"); fallback "Run N".
+function runName(d, idx){
+  const ts=(d&&d.config&&d.config.tier_specs)||[];
+  const names=ts.map(t=>tdisp(t.name)).filter(Boolean);
+  return names.length ? names.join("→") : ("Run "+idx);
+}
+function hasCfg(d){ return !!(d && d.config); }
+
+// ---- cumulative-mean throughput per history point (tokens so far / elapsed) ---- //
+function addMeanTps(hist){
+  let cum=0;
+  (hist||[]).forEach((p,i)=>{
+    const tot=(+p.prompt_tps||0)+(+p.decode_tps||0);
+    const dt=(i===0)?(+p.t_s||0):((+p.t_s||0)-(+hist[i-1].t_s||0));
+    cum += tot*Math.max(0,dt);
+    p.mean_tps=((+p.t_s||0)>0)? cum/(+p.t_s) : 0;
+  });
+}
+
+// ---- two-series line chart (Run 1 = orange, Run 2 = white), gridded ---- //
+function lineChart2(elId, h1, h2, key, opts){
+  opts=opts||{};
+  const el=$(elId); if(!el) return;
+  if(!((h1&&h1.length>1)||(h2&&h2.length>1))){ el.innerHTML=collecting(); return; }
+  const yfmt=opts.yfmt||(v=>(+v).toFixed(1));
+  const series=[
+    {hist:h1||[], color:"var(--run1)", label:opts.label1||"Run 1"},
+    {hist:h2||[], color:"var(--run2)", label:opts.label2||"Run 2"},
+  ];
+  const allX=series.flatMap(s=>s.hist.map(p=>+p.t_s||0));
+  const minX=0, maxX=Math.max(1e-9,...allX,(opts.xMax||0));
+  const maxY=Math.max(1e-9,...series.flatMap(s=>s.hist.map(p=>+p[key]||0)));
+  // Size the viewBox to the container's actual pixels so the plot fills its (fixed-height)
+  // cell. viewBox aspect == container aspect => preserveAspectRatio:none fills with no distortion.
+  const box=el.getBoundingClientRect();
+  const W=Math.max(320, Math.round(box.width  || el.clientWidth  || 620));
+  const H=Math.max(160, Math.round(box.height || el.clientHeight || opts.H || 300));
+  const padL=70,padR=16,padT=20,padB=46;
+  const X=v=>padL+(maxX===minX?0:(v-minX)/(maxX-minX))*(W-padL-padR);
+  const Y=v=>H-padB-(v/maxY)*(H-padB-padT);
+  const NY=6,NX=6, xdec=(maxX-minX)<10?1:0;
+  let grid="";
+  for(let i=0;i<=NY;i++){ const gy=padT+(i/NY)*(H-padB-padT), val=maxY*(1-i/NY);
+    grid+=`<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${W-padR}" y2="${gy.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity="${i===NY?1:0.5}"/>`
+        + `<text x="${padL-10}" y="${(gy+5).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="13">${yfmt(val)}</text>`; }
+  for(let i=0;i<=NX;i++){ const tv=minX+(i/NX)*(maxX-minX), gx=X(tv);
+    grid+=`<line x1="${gx.toFixed(1)}" y1="${padT}" x2="${gx.toFixed(1)}" y2="${H-padB}" stroke="var(--line)" stroke-width="1" opacity="${i===0?1:0.32}"/>`
+        + `<text x="${gx.toFixed(1)}" y="${H-padB+26}" text-anchor="middle" fill="var(--muted)" font-size="13">${tv.toFixed(xdec)}s</text>`; }
+  const lines=series.map(s=> s.hist.length>1?`<polyline fill="none" stroke="${s.color}" stroke-width="1.2" vector-effect="non-scaling-stroke"
+     points="${s.hist.map(p=>X(+p.t_s||0).toFixed(1)+','+Y(+p[key]||0).toFixed(1)).join(' ')}"/>`:"").join("");
+  // end-of-line dot per series; pulsing ring only while that run is still in progress
+  const live=opts.live||[];
+  const dots=series.map((s,i)=>{
+    if(!s.hist.length) return "";
+    const p=s.hist[s.hist.length-1], x=X(+p.t_s||0).toFixed(1), yv=Y(+p[key]||0).toFixed(1);
+    const ring = live[i] ? `<circle cx="${x}" cy="${yv}" r="5" fill="none" stroke="${s.color}" stroke-width="2">`
+        +`<animate attributeName="r" values="5;15" dur="1.4s" repeatCount="indefinite"/>`
+        +`<animate attributeName="opacity" values="0.7;0" dur="1.4s" repeatCount="indefinite"/></circle>` : "";
+    return `${ring}<circle cx="${x}" cy="${yv}" r="4.5" fill="${s.color}"/>`;
+  }).join("");
+  const legLeft=!!opts.legendLeft, legX=legLeft?(padL+4):(W-padR), legAnchor=legLeft?"start":"end";
+  const leg=series.map((s,i)=>`<text x="${legX}" y="${padT+6+i*20}" text-anchor="${legAnchor}" fill="${s.color}" font-size="13">■ ${esc(s.label)}</text>`).join("");
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="none" font-family="monospace" style="display:block">${grid}${lines}${dots}${leg}</svg>`;
+}
+
+// ---- memory-by-tier list (overall bar per tier), one color per run ---- //
+function renderTiers(tiers, elId, barColor){
+  const el=$(elId); if(!el) return;
+  if(!tiers||!tiers.length){ el.innerHTML='<div class="sub">No tier data yet.</div>'; return; }
+  const col=barColor||"var(--accent)";
+  el.innerHTML = tiers.map(t=>{
+    const pooled=t.scope==="pooled";
+    const scopeTxt = pooled?"pooled (pod-wide)":t.scope;
+    return `<div class="tier">
+      <div class="hd"><span class="nm" style="color:${col}">${octSpan(tdisp(t.name))}</span>
+        <span class="scope ${pooled?'pooled':''}">${esc(scopeTxt)}</span></div>
+      <div class="bar"><div style="width:${Math.min(100,t.total_pct||0).toFixed(1)}%;background:${col}"></div></div>
+      <div class="amt" style="margin-top:3px">${fb(t.total_used_bytes)} / ${fb(t.total_cap_bytes)}
+        &nbsp;(${(t.total_pct||0).toFixed(2)}%)</div></div>`;
+  }).join("");
+}
+
+// ---- (1) lean two-run summary (one full-width box, two columns) ---- //
+function runBlock(d, idx){
+  const isR2=idx===2, col=isR2?"var(--run2)":"var(--run1)";
+  if(!hasCfg(d)){
+    return `<div class="rs ${isR2?'r2':'r1'}"><div class="rn" style="color:${col}">
+      <span class="swatch" style="background:${col}"></span>Run ${idx}</div>
+      <div class="meta">waiting — start a sim with <code>--dashboard-file ${isR2?'…/live2.json':'…/live.json'}</code></div></div>`;
+  }
+  const c=d.config, name=runName(d,idx);
+  const F=(l,v)=>`<span class="ml">${l}</span> <b>${v}</b>`;
+  const meta=[
+    F("model", esc((c.models||[]).join(", "))),
+    F("workload", esc(c.dataset||"—")),
+    F("racks", c.num_nodes),
+    F("instances", c.num_instances),
+    F("GPUs", c.total_npu),
+  ].join(" &nbsp;·&nbsp; ");
+  return `<div class="rs ${isR2?'r2':'r1'}">
+    <div class="rn" style="color:${col}"><span class="swatch" style="background:${col}"></span>Run ${idx} · ${octSpan(name)}</div>
+    <div class="meta">${meta}</div></div>`;
+}
+
+// ---- (3) key-metric comparison table ---- //
+function _g(d,path){ try{ return path.split('.').reduce((o,k)=>o[k],d); }catch(e){ return undefined; } }
+function metrics(d){
+  return {
+    fin:  +(_g(d,'counters.requests_finished')||0),
+    tot:  +(_g(d,'config.est_total_requests') || _g(d,'counters.requests_total') || 0),
+    thr:  +(_g(d,'throughput.total_tok_per_s')||0),
+    ttft: +(_g(d,'latency.ttft.mean')||0),
+    ttftP90: +(_g(d,'latency.ttft.p90')||0),
+    e2e:  +(_g(d,'latency.e2e.mean')||0),
+  };
+}
+// The third metric slot toggles between Average request completion time (E2E) and P90 TTFT
+// (the 90th-percentile TTFT — a percentile, not a mean). `showE2e` true => completion time;
+// false => P90 TTFT. Returned config drives plot + Key metrics + Improvement.
+function thirdMetric(){
+  return showE2e
+    ? {plotKey:"e2e",      title:"⏱️ Average request completion time", unit:"(ms)",
+       kmLabel:"Average request completion time (s)", km:m=>(m.e2e/1000).toFixed(2),
+       impName:"Average request completion time", val:m=>m.e2e}
+    : {plotKey:"ttft_p90", title:"⏱️ P90 TTFT",                        unit:"(ms)",
+       kmLabel:"P90 TTFT (ms)",                     km:m=>m.ttftP90.toFixed(1),
+       impName:"P90 TTFT",                          val:m=>m.ttftP90};
+}
+// seamless KPI tiles: 2 columns (Run 1 | Run 2) x 4 metric rows, values highlighted
+function cmpTiles(d1,d2){
+  const m1=metrics(d1), m2=metrics(d2), n1=runName(d1,1), n2=runName(d2,2);
+  const tm=thirdMetric();
+  const rows=[
+    ["Requests finished / total", `${fi(m1.fin)} / ${fi(m1.tot)}`, `${fi(m2.fin)} / ${fi(m2.tot)}`],
+    ["Average throughput (tok/s)", m1.thr.toFixed(1), m2.thr.toFixed(1)],
+    ["Average TTFT (ms)", m1.ttft.toFixed(1), m2.ttft.toFixed(1)],
+    [tm.kmLabel, tm.km(m1), tm.km(m2)],   // completion time (s) ⇄ P90 TTFT (ms)
+  ];
+  let h=`<div class="cmphdr colrun1">Run 1 · ${octSpan(n1)}</div><div class="cmphdr colrun2">Run 2 · ${octSpan(n2)}</div>`;
+  h+=rows.map(r=>
+      `<div class="cmpcell"><span class="cl">${r[0]}</span><span class="cv" style="color:var(--run1)">${r[1]}</span></div>`
+    + `<div class="cmpcell"><span class="cl">${r[0]}</span><span class="cv" style="color:var(--run2)">${r[2]}</span></div>`
+  ).join("");
+  return h;
+}
+
+// ---- (6) improvement pane: Run 2 vs Run 1 ---- //
+function pct(base, val){ return (base>0) ? ((val-base)/base*100) : 0; }
+// three seamless tiles: Run 2 vs Run 1 % change per KPI (green = better)
+function improvementTiles(d1,d2){
+  if(!hasCfg(d1)||!hasCfg(d2)){
+    return `<div class="impcell" style="grid-column:1/-1"><div class="il">Waiting for both runs<span class="s">(start Run 2 to compute the deltas)</span></div><div class="iv neu">—</div></div>`;
+  }
+  const m1=metrics(d1), m2=metrics(d2), tm=thirdMetric();
+  const items=[
+    {name:"Average TTFT",                    sub:"lower is better",  better:"lower",  v1:m1.ttft, v2:m2.ttft},
+    {name:"Average throughput",              sub:"higher is better", better:"higher", v1:m1.thr, v2:m2.thr},
+    {name:tm.impName,                        sub:"lower is better",  better:"lower",  v1:tm.val(m1), v2:tm.val(m2)},
+  ];
+  return items.map(it=>{
+    const delta=pct(it.v1,it.v2);
+    const improved = it.better==="higher" ? delta>0 : delta<0;
+    const mag=Math.abs(delta);
+    const cls = mag<0.05 ? "neu" : (improved?"good":"bad2");
+    const arrow = mag<0.05 ? "→" : (improved?"▲":"▼");
+    const word = mag<0.05 ? "no change" : (improved?"better":"worse");
+    return `<div class="impcell">
+      <div class="il">${it.name}<span class="s">(${it.sub})</span></div>
+      <div class="iv ${cls}">${arrow} ${mag.toFixed(1)}%</div>
+      <div class="iw ${cls}">${word}</div></div>`;
+  }).join("");
+}
+
+// ---- (2) two-track simulation timeline ---- //
+function renderTimeline2(d1,d2,axisEnd){
+  const el=$("simtimeline"); if(!el) return;
+  const runs=[
+    {d:d1, color:"var(--run1)", label:"Run 1 · "+runName(d1,1)},
+    {d:d2, color:"var(--run2)", label:"Run 2 · "+runName(d2,2)},
+  ];
+  const end1=(_g(d1,'sim.sim_seconds')||0), end2=(_g(d2,'sim.sim_seconds')||0);
+  // --timeline-seconds fixes the axis length; extend only if a run breaches it.
+  const T=((axisEnd||0)>0) ? Math.max(axisEnd,end1,end2) : Math.max(end1,end2,1);
+  const W=1000,H=96,padL=12,padR=12; const X=v=>padL+(v/T)*(W-padL-padR);
+  const rowY=[34,66];
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="monospace">`;
+  for(let i=0;i<=5;i++){ const tv=T*i/5,x=X(tv);
+    s+=`<line x1="${x.toFixed(1)}" y1="16" x2="${x.toFixed(1)}" y2="76" stroke="var(--line)" stroke-width="1" opacity="0.3"/>`
+     + `<text x="${x.toFixed(1)}" y="90" text-anchor="middle" fill="var(--muted)" font-size="12">${tv.toFixed(0)}s</text>`; }
+  const firstTs={};   // event key -> earliest sim-time it occurs (across both runs), for chronological legend order
+  runs.forEach((r,ri)=>{
+    const y=rowY[ri], nowS=(_g(r.d,'sim.sim_seconds')||0), hasD=hasCfg(r.d);
+    s+=`<text x="${padL}" y="${y-11}" fill="${r.color}" font-size="12" font-weight="700">${esc(r.label)}${hasD?'':' — waiting'}</text>`;
+    s+=`<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="var(--line)" stroke-width="2"/>`;
+    s+=`<line x1="${padL}" y1="${y}" x2="${X(nowS).toFixed(1)}" y2="${y}" stroke="${r.color}" stroke-width="4" opacity="0.5"/>`;
+    let events=(r.d&&r.d.events)?r.d.events.slice():[];
+    events=events.filter(e=>EVENT_MAP[e.key]).sort((a,b)=>a.t_s-b.t_s);
+    events.forEach(e=>{ firstTs[e.key]=(e.key in firstTs)?Math.min(firstTs[e.key],e.t_s):e.t_s; const m=EVENT_MAP[e.key],xn=X(e.t_s),x=xn.toFixed(1);
+      const tip=`${esc(r.label)} — ${esc(m.label)} @ ${e.t_s.toFixed(1)}s`;
+      // visible bright dash (no hit) + a transparent rect hit-area (pointer-events:all) so the
+      // native hover tooltip with the exact event time is reliably triggerable over a wide band.
+      s+=`<line x1="${x}" y1="${y-7}" x2="${x}" y2="${y+7}" stroke="${m.color}" stroke-width="3" stroke-linecap="round" pointer-events="none"><title>${tip}</title></line>`
+       + `<rect x="${(xn-7).toFixed(1)}" y="${y-13}" width="14" height="26" fill="transparent" pointer-events="all"><title>${tip}</title></rect>`; });
+    if(hasD){
+      const liveRun=(r.d.status==='running'||r.d.status==='starting'), ex=X(nowS).toFixed(1);
+      const tip=`${esc(r.label)} — now @ ${nowS.toFixed(1)}s ${liveRun?'(running)':'(done)'}`;
+      // pulsing ring only while the run is in progress; static dot when done
+      if(liveRun) s+=`<circle cx="${ex}" cy="${y}" r="4" fill="none" stroke="${r.color}" stroke-width="2">`
+        +`<animate attributeName="r" values="4;12" dur="1.4s" repeatCount="indefinite"/>`
+        +`<animate attributeName="opacity" values="0.85;0" dur="1.4s" repeatCount="indefinite"/></circle>`;
+      s+=`<circle cx="${ex}" cy="${y}" r="4" fill="${r.color}"><title>${tip}</title></circle>`;
+    }
+  });
+  s+=`</svg>`;
+  const evLeg=Object.keys(firstTs).sort((a,b)=>firstTs[a]-firstTs[b])
+    .map(k=>`<span class="tl-ev"><span class="tl-dot" style="background:${EVENT_MAP[k].color}"></span>${octSpan(EVENT_MAP[k].label)}</span>`).join("");
+  el.innerHTML=`<div class="tl-head"><span>⏱️ Simulation timeline — Run 1 vs Run 2</span>`
+    +`<span class="sub">Run 1 <b style="color:var(--run1)">${end1.toFixed(0)}s</b> · Run 2 <b style="color:var(--run2)">${end2.toFixed(0)}s</b></span></div>`
+    +s+`<div class="tl-legend">${evLeg||'<span class="sub">no events yet…</span>'}</div>`;
+}
+
+// Last snapshot per run that actually carried data (hasCfg). Used as a sticky fallback so a
+// transient fetch failure / server hiccup / momentarily-missing file (all of which surface as a
+// {status:"waiting"|"error"} placeholder) never blanks the dashboard — we keep showing the last
+// known good state until a fresh good snapshot arrives.
+let LAST1=null, LAST2=null;
+async function poll(){
+  let f1=null,f2=null;
+  try{ f1=await (await fetch("/api/metrics",{cache:"no-store"})).json(); }catch(e){}
+  try{ f2=await (await fetch("/api/metrics2",{cache:"no-store"})).json(); }catch(e){}
+  if(hasCfg(f1)) LAST1=f1;
+  if(hasCfg(f2)) LAST2=f2;
+  // Fall back to the cached snapshot when this poll didn't return real data for a run.
+  const stale1=!hasCfg(f1)&&!!LAST1, stale2=!hasCfg(f2)&&!!LAST2;
+  const d1 = hasCfg(f1) ? f1 : (LAST1 || f1 || {status:"waiting"});
+  const d2 = hasCfg(f2) ? f2 : (LAST2 || f2 || {status:"waiting"});
+
+  // combined status pill
+  const st1=d1.status||"waiting", st2=d2.status||"waiting";
+  const sp=$("status");
+  const both = hasCfg(d1)&&hasCfg(d2);
+  const overall = (st1==="done"&&st2==="done")?"done":(st1==="running"||st2==="running")?"running":both?"ready":"waiting";
+  sp.textContent = `Run1 ${st1} · Run2 ${st2}`;
+  sp.className = "pill st-"+(["running","done","starting","error"].includes(overall)?overall:"waiting");
+
+  // wall-clock time for both runs (top-right)
+  const wfmt=s=>{ s=+s||0; return s>=60 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${s.toFixed(1)}s`; };
+  $("wall").innerHTML = `wall <b style="color:var(--run1)">${hasCfg(d1)?wfmt(d1.wall_seconds):'—'}</b>`
+    + ` / <b style="color:var(--run2)">${hasCfg(d2)?wfmt(d2.wall_seconds):'—'}</b>`;
+
+  // --timeline-seconds: fixed initial x-axis length (seconds) for the timeline AND
+  // every plot; extended only if a run actually breaches it. Read from either run's
+  // config (0 = flag not set -> auto-scale to the data as before).
+  const axisEnd = Math.max((_g(d1,'config.axis_end_s')||0), (_g(d2,'config.axis_end_s')||0));
+
+  $("banner").innerHTML = runBlock(d1,1)+runBlock(d2,2);
+  renderTimeline2(d1,d2,axisEnd);
+  $("cmptiles").innerHTML = cmpTiles(d1,d2);
+  $("imptiles").innerHTML = improvementTiles(d1,d2);
+
+  const h1=(_g(d1,'throughput.history'))||[], h2=(_g(d2,'throughput.history'))||[];
+  addMeanTps(h1); addMeanTps(h2);
+  const n1=runName(d1,1), n2=runName(d2,2);
+  const live=[(st1==='running'||st1==='starting'), (st2==='running'||st2==='starting')];
+  // Plots fill their fixed-height cells (CSS-driven): TTFT is the tall primary on the left;
+  // throughput + the toggled third metric (completion time ⇄ P90 TTFT) stack on the right.
+  const tm=thirdMetric();
+  $("e2eTitle").innerHTML = tm.title + ' <span class="sub" style="font-weight:400">'+tm.unit+'</span>';
+  lineChart2("chartTtft", h1,h2,"ttft",{yfmt:fmsLat,label1:n1,label2:n2,xMax:axisEnd,live,legendLeft:true});
+  lineChart2("chartThr", h1,h2,"mean_tps",{yfmt:fmsThr,label1:n1,label2:n2,xMax:axisEnd,live,legendLeft:true});
+  lineChart2("chartE2e", h1,h2,tm.plotKey,{yfmt:fmsLat,label1:n1,label2:n2,xMax:axisEnd,live});
+
+  renderTiers((d1.tiers)||[], "tiersRun1", "var(--run1)");
+  renderTiers((d2.tiers)||[], "tiersRun2", "var(--run2)");
+  $("memName1").innerHTML = "Run 1 · "+octSpan(n1);
+  $("memName2").innerHTML = "Run 2 · "+octSpan(n2);
+
+  $("foot").innerHTML=`source <code>/api/metrics</code> (run 1) + <code>/api/metrics2</code> (run 2) · `
+    + `run 1 ${esc(st1)} · run 2 ${esc(st2)}`
+    + ((stale1||stale2) ? ` · <span style="color:var(--warn)">showing last known state — reconnecting…</span>` : ``);
+  schedule();
+}
+
+// ---- theme + refresh controls ---- //
+const themeBtn=$("themeBtn");
+function applyTheme(t){ document.body.classList.toggle("light",t==="light"); themeBtn.textContent=t==="light"?"🌙 Dark":"☀️ Light"; }
+let theme=localStorage.getItem("llmss-theme")||"dark"; applyTheme(theme);
+themeBtn.onclick=()=>{ theme=(theme==="light"?"dark":"light"); localStorage.setItem("llmss-theme",theme); applyTheme(theme); };
+
+let REFRESH_MS=+(localStorage.getItem("llmss-refresh-v3")||3000);
+const rsel=$("refresh"); rsel.value=String(REFRESH_MS);
+rsel.onchange=()=>{ REFRESH_MS=+rsel.value; localStorage.setItem("llmss-refresh-v3",REFRESH_MS); schedule(); };
+
+// ---- CT toggle: swaps the third metric slot (plot + Key metrics + Improvement) between
+//      Average request completion time (showE2e=true) and P90 TTFT (false) ---- //
+let showE2e = (localStorage.getItem("llmss-show-e2e") !== "0");   // default: completion time
+const e2eBtn=$("e2eBtn");
+function applyE2e(){
+  e2eBtn.classList.toggle("off", !showE2e);   // dashed "CT" when showing P90 TTFT instead
+  e2eBtn.textContent = "CT";                  // compact single-line label
+}
+applyE2e();
+e2eBtn.onclick=()=>{ showE2e=!showE2e; localStorage.setItem("llmss-show-e2e", showE2e?"1":"0"); applyE2e(); poll(); };
+
+let timer=null;
+function schedule(){ clearTimeout(timer); timer=setTimeout(poll, REFRESH_MS); }
+poll();
+</script>
+</body>
+</html>

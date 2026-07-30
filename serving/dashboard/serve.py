@@ -27,7 +27,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))
 
 
-def _make_handler(index_path, metrics_path):
+def _make_handler(index_path, metrics_path, metrics_path2=None):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype):
             self.send_response(code)
@@ -55,9 +55,13 @@ def _make_handler(index_path, metrics_path):
                         self._send(200, f.read(), "text/html; charset=utf-8")
                 except Exception as e:
                     self._send(500, str(e).encode(), "text/plain")
-            elif path == "/api/metrics":
+            elif path in ("/api/metrics", "/api/metrics2"):
+                mp = metrics_path2 if path == "/api/metrics2" else metrics_path
+                if not mp:
+                    self._send(200, b'{"status":"waiting"}', "application/json")
+                    return
                 try:
-                    with open(metrics_path, "rb") as f:
+                    with open(mp, "rb") as f:
                         self._send(200, f.read(), "application/json")
                 except FileNotFoundError:
                     self._send(200, b'{"status":"waiting"}', "application/json")
@@ -100,13 +104,22 @@ def main():
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--file", default=os.path.join(_REPO, "outputs", "dashboard", "live.json"),
-                    help="path to the live-metrics JSON written by `--dashboard`")
+                    help="path to the run-1 live-metrics JSON written by `--dashboard`")
+    ap.add_argument("--file2", default=os.path.join(_REPO, "outputs", "dashboard", "live2.json"),
+                    help="path to the run-2 live-metrics JSON (V3 comparison; served at /api/metrics2)")
+    ap.add_argument("--dashboardv2", action="store_true",
+                    help="serve the single-run V2 dashboard (index.html). Default: V3 run-comparison "
+                    "dashboard (index_v3.html), which compares --file (run 1) vs --file2 (run 2).")
     a = ap.parse_args()
-    handler = _make_handler(os.path.join(_HERE, "index.html"), os.path.abspath(a.file))
+    index_file = "index.html" if a.dashboardv2 else "index_v3.html"
+    handler = _make_handler(os.path.join(_HERE, index_file), os.path.abspath(a.file),
+                            os.path.abspath(a.file2))
     srv = ThreadingHTTPServer((a.host, a.port), handler)
-    print(f"LLMServingSim dashboard  ->  http://localhost:{a.port}")
-    print(f"  metrics file: {os.path.abspath(a.file)}")
-    print("  run a sim with --dashboard to populate it. Ctrl-C to stop.")
+    print(f"LLMServingSim dashboard ({'V2 single-run' if a.dashboardv2 else 'V3 comparison'})  ->  http://localhost:{a.port}")
+    print(f"  run 1 metrics: {os.path.abspath(a.file)}")
+    if not a.dashboardv2:
+        print(f"  run 2 metrics: {os.path.abspath(a.file2)}")
+    print("  run a sim with --dashboard to populate these. Ctrl-C to stop.")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
